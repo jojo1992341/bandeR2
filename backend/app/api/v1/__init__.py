@@ -9,6 +9,10 @@ from .ebu_stl import router as ebu_router
 from .collaboration import router as collab_router
 from .validation import router as validation_router
 from .mfa import router as mfa_router
+from .feature_flags import router as flags_router
+from .dashboard import router as dashboard_router
+from .search import router as search_router
+from .feedback import router as feedback_router
 
 router = APIRouter()
 router.include_router(auth_router)
@@ -21,3 +25,7 @@ router.include_router(ebu_router)
 router.include_router(collab_router)
 router.include_router(validation_router)
 router.include_router(mfa_router)
+router.include_router(flags_router)
+router.include_router(dashboard_router)
+router.include_router(search_router)
+router.include_router(feedback_router)
