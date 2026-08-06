@@ -13,6 +13,10 @@ from .feature_flags import router as flags_router
 from .dashboard import router as dashboard_router
 from .search import router as search_router
 from .feedback import router as feedback_router
+from .sso import router as sso_router
+from .teams import router as teams_router
+from .public_api import router as public_router
+from .mobile import router as mobile_router
 
 router = APIRouter()
 router.include_router(auth_router)
@@ -29,3 +33,7 @@ router.include_router(flags_router)
 router.include_router(dashboard_router)
 router.include_router(search_router)
 router.include_router(feedback_router)
+router.include_router(sso_router)
+router.include_router(teams_router)
+router.include_router(public_router)
+router.include_router(mobile_router)
