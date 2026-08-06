@@ -1,6 +1,6 @@
 # RythmoAI — Plan de Loop Engineering (`/goal`) pour Claude Code, du Socle à la V3+
 
-> Basé sur : *CDC_RythmoAI.docx* — Cahier des charges fonctionnel, technique et industriel v1.0 (05/08/2026)
+> Basé sur : *CDC_RythmoAI.pdf* — Cahier des charges fonctionnel, technique et industriel v1.0 (05/08/2026)
 > Méthode : *Loop Engineering* Claude Code — boucles goal-based (`/goal`), cf. [claude.com/blog/getting-started-with-loops](https://claude.com/blog/getting-started-with-loops)
 
 ## 0. Comment utiliser ce document
