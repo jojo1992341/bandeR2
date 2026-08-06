@@ -4,6 +4,11 @@ from .media import router as media_router
 from .rythmo import router as rythmo_router
 from .export import router as export_router
 from .projects import router as projects_router
+from .typographic_profiles import router as profiles_router
+from .ebu_stl import router as ebu_router
+from .collaboration import router as collab_router
+from .validation import router as validation_router
+from .mfa import router as mfa_router
 
 router = APIRouter()
 router.include_router(auth_router)
@@ -11,3 +16,8 @@ router.include_router(media_router)
 router.include_router(rythmo_router)
 router.include_router(export_router)
 router.include_router(projects_router)
+router.include_router(profiles_router)
+router.include_router(ebu_router)
+router.include_router(collab_router)
+router.include_router(validation_router)
+router.include_router(mfa_router)
