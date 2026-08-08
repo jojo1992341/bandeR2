@@ -3,8 +3,9 @@ from sqlalchemy import String, Boolean, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
-from typing import List
-
+from typing import List, TYPE_CHECKING
+if TYPE_CHECKING:
+    from .comment import Comment
 
 class User(Base):
     __tablename__ = "users"
@@ -26,3 +27,4 @@ class User(Base):
     )
 
     memberships: Mapped[List["StudioMembership"]] = relationship(back_populates="user")
+    comments_authored: Mapped[List["Comment"]] = relationship(back_populates="author")

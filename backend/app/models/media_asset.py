@@ -29,6 +29,9 @@ class MediaAsset(Base):
     fps: Mapped[int | None] = mapped_column(Integer)
     resolution: Mapped[str | None] = mapped_column(String(50))
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    status: Mapped[str | None] = mapped_column(String(50), default="pending")
+    proxy_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    sprite_sheet_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

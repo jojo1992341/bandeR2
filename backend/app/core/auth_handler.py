@@ -37,3 +37,21 @@ def verify_token(token: str, token_type: str = "access") -> Optional[dict]:
         return payload
     except Exception:
         return None
+
+
+def create_invite_token(data: dict, expires_hours: int = 168) -> str:
+    """Crée un token d'invitation à durée limitée (par défaut 7 jours)"""
+    to_encode = data.copy()
+    expire = _now() + timedelta(hours=expires_hours)
+    to_encode.update({"exp": expire, "type": "invite"})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_invite_token(token: str) -> Optional[dict]:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "invite":
+            return None
+        return payload
+    except Exception:
+        return None
