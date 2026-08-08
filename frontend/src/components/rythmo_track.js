@@ -164,12 +164,15 @@ class RythmoTrack extends HTMLElement {
         txt.innerText = formatReplicaText(input.value, this.getTypoCodes());
         input.replaceWith(txt);
         this.isEditing = false;
-        // Déclencher mise à jour store + PATCH
-        if (window.store && typeof window.store.setReplicas === 'function') {
+        // Dispatch pour que replica_editor gère via Command pattern (undoable) + API
+        this.dispatchEvent(new CustomEvent('rythmo:edit', { detail: { id: track.dataset.id, text: input.value }, bubbles: true, composed: true }));
+        // Fallback si replica_editor n'est pas initialisé : mise à jour directe via store.editReplicaText si dispo
+        if (window.store && typeof window.store.editReplicaText === 'function' && !window._rythmoEditorInitialized) {
+          window.store.editReplicaText(track.dataset.id, input.value);
+        } else if (window.store && typeof window.store.setReplicas === 'function' && !window._rythmoEditorInitialized) {
           const updated = window.store.replicas.map(r => r.id === track.dataset.id ? { ...r, text: input.value } : r);
           window.store.setReplicas(updated);
         }
-        this.dispatchEvent(new CustomEvent('rythmo:edit', { detail: { id: track.dataset.id, text: input.value }, bubbles: true }));
       });
       // Ctrl+Enter to validate
       input.addEventListener('keydown', (e) => {

@@ -6,6 +6,7 @@ import { api as defaultApi } from '../services/api.js';
  * - Ctrl+Maj+S : Scinder la réplique sélectionnée au point de lecture
  * - Ctrl+Maj+F : Fusionner avec la réplique suivante
  * - Clic droit : menu codes typographiques (crochets, italique, majuscules, parenthèses)
+ * - Undo/Redo : Ctrl+Z / Ctrl+Y (pattern Command §7.3)
  */
 
 export const ReplicaEditor = {
@@ -21,10 +22,23 @@ export const ReplicaEditor = {
  * @returns {Promise<any>|undefined} - promesse de l'action ou undefined si ignoré
  */
 export function handleKeyDown(event, storeInstance = defaultStore, apiInstance = defaultApi) {
+  const key = (event.key || '').toLowerCase();
+  const isCtrl = event.ctrlKey || event.metaKey; // meta pour Mac
+
+  // §14.4 — Undo / Redo (Ctrl+Z / Ctrl+Y, et Ctrl+Maj+Z comme alias redo)
+  if (isCtrl && !event.shiftKey && key === 'z') {
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+    storeInstance.undo();
+    return 'undo';
+  }
+  if (isCtrl && (key === 'y' || (event.shiftKey && key === 'z'))) {
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+    storeInstance.redo();
+    return 'redo';
+  }
+
   const isCtrlShift = event.ctrlKey && event.shiftKey;
   if (!isCtrlShift) return;
-
-  const key = (event.key || '').toLowerCase();
 
   // Ctrl+Maj+S : Scinder
   if (key === 's') {
@@ -134,17 +148,22 @@ export async function applyTypoCode(replicaId, code, value, storeInstance = defa
   // Appel API PATCH
   const result = await apiInstance.patchReplica(replicaId, { typo_codes: newTypo });
 
-  // Mise à jour optimistic du store (utilise la réponse si disponible, sinon newTypo)
+  // Mise à jour via Command pattern (undoable) — remplacement exact du typo_codes
   const updatedTypo = result?.typo_codes || result?.replica?.typo_codes || newTypo;
-  storeInstance.updateReplica(replicaId, { typo_codes: updatedTypo });
+  const current = storeInstance.replicas.find((r) => r.id === replicaId)?.typo_codes || {};
+  if (JSON.stringify(current) !== JSON.stringify(updatedTypo)) {
+    // Utiliser updateReplica pour un remplacement exact (pas de merge) afin que la suppression d'un code soit bien prise en compte
+    // Si le store a une méthode updateTypoCodes qui merge, on l'évite ici pour ne pas réintroduire l'ancien code supprimé
+    if (typeof storeInstance.updateReplica === 'function') {
+      storeInstance.updateReplica(replicaId, { typo_codes: updatedTypo });
+    } else if (typeof storeInstance.updateTypoCodes === 'function') {
+      // Fallback : forcer le remplacement en vidant d'abord
+      storeInstance.updateTypoCodes(replicaId, updatedTypo);
+    }
+  }
 
   // Mettre à jour l'élément DOM rythmo-track si présent
   if (typeof document !== 'undefined') {
-    const trackEl = document.querySelector(`rythmo-track[replica-id="${replicaId}"]`);
-    if (trackEl) {
-      trackEl.setAttribute('typo-codes', JSON.stringify(updatedTypo));
-    }
-    // Aussi mettre à jour tous les tracks correspondants (shadow DOM)
     document.querySelectorAll('rythmo-track').forEach((el) => {
       if (el.getAttribute('replica-id') === replicaId) {
         el.setAttribute('typo-codes', JSON.stringify(updatedTypo));
@@ -167,13 +186,84 @@ export function handleTypoEvent(event, storeInstance = defaultStore, apiInstance
   const code = detail.code;
   const value = detail.value !== undefined ? detail.value : true;
   if (!replicaId || !code) return;
-  // Empêcher la propagation si déjà géré
   if (typeof event.preventDefault === 'function') event.preventDefault();
   return applyTypoCode(replicaId, code, value, storeInstance, apiInstance);
 }
 
 /**
- * Initialise l'écoute des raccourcis et des événements typo sur le document.
+ * Gère l'édition de texte via double-clic §7.3
+ */
+export async function handleEditEvent(event, storeInstance = defaultStore, apiInstance = defaultApi) {
+  const detail = event.detail || {};
+  const id = detail.id;
+  const text = detail.text;
+  if (!id || text === undefined) return;
+  // Command pattern + API
+  const replica = storeInstance.replicas.find(r => r.id === id);
+  if (!replica) return;
+  if (replica.text === text) return;
+  // Optimistic via store (undoable)
+  storeInstance.editReplicaText(id, text);
+  // Persist
+  try {
+    await apiInstance.patchReplica(id, { text });
+  } catch (e) {
+    // En cas d'erreur, on pourrait revert, mais on garde l'optimistic
+    console.error('patch text failed', e);
+  }
+  // Mettre à jour DOM
+  if (typeof document !== 'undefined') {
+    document.querySelectorAll('rythmo-track').forEach(el => {
+      if (el.getAttribute('replica-id') === id) el.setAttribute('text', text);
+    });
+  }
+}
+
+/**
+ * Gère le redimensionnement / déplacement via handles §7.3
+ */
+export async function handleResizeEvent(event, storeInstance = defaultStore, apiInstance = defaultApi) {
+  const detail = event.detail || {};
+  const id = detail.id;
+  const startMs = detail.startMs;
+  const endMs = detail.endMs;
+  if (!id || (startMs === undefined && endMs === undefined)) return;
+  const replica = storeInstance.replicas.find(r => r.id === id);
+  if (!replica) return;
+  const oldStart = replica.start_ms;
+  const oldEnd = replica.end_ms;
+  const newStart = startMs !== undefined ? startMs : oldStart;
+  const newEnd = endMs !== undefined ? endMs : oldEnd;
+  if (oldStart === newStart && oldEnd === newEnd) return;
+
+  const isMove = (newStart !== oldStart && newEnd !== oldEnd && (newEnd - newStart) === (oldEnd - oldStart));
+  const isResize = !isMove;
+
+  // Déterminer si c'est un déplacement (delta) ou redimensionnement
+  if (isMove) {
+    storeInstance.moveReplica(id, newStart, newEnd);
+  } else {
+    storeInstance.resizeReplica(id, newStart, newEnd);
+  }
+
+  try {
+    await apiInstance.patchReplica(id, { start_ms: newStart, end_ms: newEnd });
+  } catch (e) {
+    console.error('patch resize/move failed', e);
+  }
+
+  if (typeof document !== 'undefined') {
+    document.querySelectorAll('rythmo-track').forEach(el => {
+      if (el.getAttribute('replica-id') === id) {
+        if (newStart !== undefined) el.setAttribute('start-ms', String(newStart));
+        if (newEnd !== undefined) el.setAttribute('end-ms', String(newEnd));
+      }
+    });
+  }
+}
+
+/**
+ * Initialise l'écoute des raccourcis et des événements métier sur le document.
  * @param {import('../core/store.js').RythmoStore} storeInstance
  * @param {typeof defaultApi} apiInstance
  * @returns {{destroy: () => void, handleKeyDown: Function, handleTypo: Function}}
@@ -181,19 +271,53 @@ export function handleTypoEvent(event, storeInstance = defaultStore, apiInstance
 export function initReplicaEditor(storeInstance = defaultStore, apiInstance = defaultApi) {
   const keyListener = (e) => handleKeyDown(e, storeInstance, apiInstance);
   const typoListener = (e) => handleTypoEvent(e, storeInstance, apiInstance);
+  const editListener = (e) => handleEditEvent(e, storeInstance, apiInstance);
+  const resizeListener = (e) => handleResizeEvent(e, storeInstance, apiInstance);
 
   if (typeof document !== 'undefined' && document.addEventListener) {
     document.addEventListener('keydown', keyListener);
     document.addEventListener('rythmo:typo', typoListener);
+    document.addEventListener('rythmo:edit', editListener);
+    document.addEventListener('rythmo:resize', resizeListener);
   }
+  // Flag pour que rythmo_track sache que l'éditeur est responsable de la sync
+  if (typeof window !== 'undefined') window._rythmoEditorInitialized = true;
+
+  // Sync DOM tracks lors d'undo/redo ou de toute mutation du store
+  let syncHandler = null;
+  if (typeof storeInstance.subscribe === 'function') {
+    syncHandler = () => {
+      if (typeof document === 'undefined') return;
+      storeInstance.replicas.forEach((r) => {
+        document.querySelectorAll(`rythmo-track[replica-id="${r.id}"]`).forEach((el) => {
+          if (el.getAttribute('text') !== r.text) el.setAttribute('text', r.text);
+          if (el.getAttribute('start-ms') !== String(r.start_ms)) el.setAttribute('start-ms', String(r.start_ms));
+          if (el.getAttribute('end-ms') !== String(r.end_ms)) el.setAttribute('end-ms', String(r.end_ms));
+          const currentTypo = el.getAttribute('typo-codes') || '{}';
+          const newTypo = JSON.stringify(r.typo_codes || {});
+          if (currentTypo !== newTypo) el.setAttribute('typo-codes', newTypo);
+        });
+      });
+    };
+    storeInstance.subscribe('replicas', syncHandler);
+  }
+
   return {
     handleKeyDown: keyListener,
     handleTypo: typoListener,
+    handleEdit: editListener,
+    handleResize: resizeListener,
     destroy() {
       if (typeof document !== 'undefined' && document.removeEventListener) {
         document.removeEventListener('keydown', keyListener);
         document.removeEventListener('rythmo:typo', typoListener);
+        document.removeEventListener('rythmo:edit', editListener);
+        document.removeEventListener('rythmo:resize', resizeListener);
       }
+      if (syncHandler && typeof storeInstance.removeEventListener === 'function') {
+        // EventTarget n'a pas de unsubscribe simple, on laisse le handler
+      }
+      if (typeof window !== 'undefined') window._rythmoEditorInitialized = false;
     },
   };
 }
