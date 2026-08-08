@@ -240,4 +240,23 @@ export const api = {
     if (!res.ok) throw new Error(`listProjectStatuses failed ${res.status}`);
     return res.json();
   },
+
+  // ==================== Dashboard §14.2.1 ====================
+
+  async getStudioDashboard(studioId) {
+    const res = await fetch(`/api/v1/studios/${studioId}/dashboard`);
+    if (!res.ok) throw new Error(`getStudioDashboard failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async listStudioProjects(studioId, { status, statuses, page, perPage } = {}) {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (statuses) params.set('statuses', statuses);
+    if (page) params.set('page', String(page));
+    if (perPage) params.set('per_page', String(perPage));
+    const res = await fetch(`/api/v1/studios/${studioId}/projects?${params.toString()}`);
+    if (!res.ok) throw new Error(`listStudioProjects failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
 };
