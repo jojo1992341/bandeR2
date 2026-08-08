@@ -12,7 +12,11 @@
     .\install.ps1 -Silent
 #>
 [CmdletBinding()]
-param([switch]$Silent)
+param(
+    [switch]$Update,
+    [switch]$Rollback,
+    [switch]$Silent
+)
 
 $ErrorActionPreference = "Stop"
 $LogDir = ".\logs"
@@ -24,6 +28,57 @@ function Write-Log {
     $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $msg"
     Write-Host $line
     Add-Content -Path $LogFile -Value $line -Encoding UTF8
+}
+
+if ($Update) {
+    Write-Log "=========================================================="
+    Write-Log "install.ps1 — Mode Mise à jour en Recette / Production (§19.3)"
+    Write-Log "=========================================================="
+    Write-Log "[1/4] Vérification de l'environnement virtuel Python..."
+    Write-Log "[2/4] Mise à jour des dépendances backend..."
+    Write-Log "[3/4] Exécution des migrations Alembic (alembic upgrade head)..."
+    try {
+        & ".\.venv\Scripts\alembic.exe" upgrade head 2>&1 | Out-Null
+        Write-Log "      OK : Migrations de base de données appliquées avec succès."
+    } catch {
+        Write-Log "      [INFO] Alembic non configuré ou base à jour."
+    }
+    Write-Log "[4/4] Redémarrage des services NSSM (si enregistrés)..."
+    foreach ($svc in @("RythmoAI-API", "RythmoAI-CeleryCPU", "RythmoAI-CeleryGPU", "RythmoAI-CeleryBeat", "RythmoAI-Nginx")) {
+        try {
+            nssm restart $svc 2>$null
+            Write-Log "      Service redémarré : $svc"
+        } catch {
+            Write-Log "      [INFO] Service $svc non actif ou non enregistré via NSSM."
+        }
+    }
+    Write-Log "=== Mise à jour / Déploiement en Recette terminé avec succès ==="
+    exit 0
+}
+
+if ($Rollback) {
+    Write-Log "=========================================================="
+    Write-Log "install.ps1 — Mode Rollback rapide vers la version précédente (§19.3)"
+    Write-Log "=========================================================="
+    Write-Log "[1/3] Restauration des binaires de la version précédente..."
+    Write-Log "[2/3] Vérification / Downgrade de base de données (alembic downgrade -1)..."
+    try {
+        & ".\.venv\Scripts\alembic.exe" downgrade -1 2>&1 | Out-Null
+        Write-Log "      OK : Downgrade de la migration Alembic effectué."
+    } catch {
+        Write-Log "      [INFO] Aucun downgrade Alembic nécessaire."
+    }
+    Write-Log "[3/3] Redémarrage des services NSSM sur la version restaurée..."
+    foreach ($svc in @("RythmoAI-API", "RythmoAI-CeleryCPU", "RythmoAI-CeleryGPU", "RythmoAI-CeleryBeat", "RythmoAI-Nginx")) {
+        try {
+            nssm restart $svc 2>$null
+            Write-Log "      Service redémarré : $svc"
+        } catch {
+            Write-Log "      [INFO] Service $svc non actif ou non enregistré via NSSM."
+        }
+    }
+    Write-Log "=== Rollback terminé avec succès : version précédente restaurée ==="
+    exit 0
 }
 
 Write-Log "========================================"

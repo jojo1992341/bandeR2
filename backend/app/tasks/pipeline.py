@@ -109,10 +109,28 @@ def notify_completion(self, pipeline_result: dict):
                 job = (
                     db.query(PipelineJob).filter(PipelineJob.id == val_uuid).first()
                 )
+            if not job:
+                job = PipelineJob(
+                    id=uuid.uuid4(),
+                    project_id=val_uuid,
+                    status="Prêt pour édition",
+                    progress_percent=100,
+                    current_step="export",
+                )
+                db.add(job)
         if job:
             job.status = "Prêt pour édition"
             job.progress_percent = 100
             job.current_step = "export"
+            from app.models import Project
+
+            project = (
+                db.query(Project)
+                .filter(Project.id == job.project_id)
+                .first()
+            )
+            if project:
+                project.status = "Pret_pour_edition"
             db.commit()
     finally:
         db.close()

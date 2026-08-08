@@ -14,3 +14,7 @@ dist/
 build/
 .env
 /backups/
+/deploy/recette/
+/deploy/releases/
+/deploy/test_*/
+/uploads/uploads/
