@@ -7,17 +7,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.core.database import get_db
+from app.core.database import engine, SessionLocal as TestingSessionLocal
 from app.models import Base, Studio, Project, MediaAsset, Replica, RythmoVersion, Export, StudioMembership, User, StudioInvitation, Comment
-
-# Utiliser SQLite in-memory pour l'intégration sans dépendance Postgres
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
 
 # Créer le schéma une fois
 Base.metadata.create_all(bind=engine)
@@ -34,14 +25,6 @@ try:
 except:
     pass
 
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
 
 def _clean_db(db):

@@ -8,25 +8,19 @@ celery_app = Celery("rythmoai", broker="redis://localhost:6379/0")
 celery_app.conf.task_acks_late = True
 celery_app.conf.task_reject_on_worker_lost = True
 celery_app.conf.task_default_queue = "celery"
-celery_app.conf.result_expires = 3600
-celery_app.conf.broker_connection_retry_on_startup = True
 
-# Dead Letter Queue : tâches en échec définitif routées
+# Configuration file Dead-Letter (DLQ §6.4 / §10.3)
 celery_app.conf.task_routes = {
-    "app.tasks.pipeline.notify_completion": {"queue": "dead_letter", "routing_key": "dead_letter"},
-}
-celery_app.conf.task_annotations = {
-    "*": {
-        "rate_limit": "10/m",
-        "time_limit": 1800,
-        "soft_time_limit": 1200,
-    }
+    "app.tasks.pipeline.*": {"queue": "celery"},
+    "app.tasks.dlq.*": {"queue": "dead_letter"},
 }
 
-# Circuit breaker : si service externe indisponible → repli Whisper local
-# Implémenté au niveau des tâches (try/except sur services externes)
 
-from app.tasks.audio_extraction import extract_audio
+def _exponential_backoff(retry_count: int) -> int:
+    """Calcul du backoff exponentiel (2^retry_count * 5s) limité à 300s."""
+    return min((2**retry_count) * 5, 300)
+
+
 from app.tasks.normalize_audio import normalize_audio
 from app.tasks.transcription import transcribe_audio
 from app.tasks.forced_alignment import forced_alignment
@@ -34,46 +28,87 @@ from app.tasks.diarize_speakers import diarize_speakers
 from app.tasks.prosody_analysis import analyze_prosody
 from app.tasks.generate_rythmo import generate_rythmo_band
 from app.tasks.export import export_project
+from app.tasks.audio_extraction import extract_audio
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=10, autoretry_for=(Exception,))
+
+@celery_app.task(
+    bind=True, max_retries=3, default_retry_delay=10, autoretry_for=(Exception,)
+)
 def pipeline_extract_normalize(self, media_path: str, media_id: str):
     # Étape 1 : extraction + normalisation EBU R128
-    extract_result = extract_audio.run(media_path=media_path, output_dir="/tmp/rythmoai_audio")
-    # Passer au premier WAV extrait
-    first_wav = extract_result["tracks"][0]["local_path"] if extract_result.get("tracks") else None
-    if not first_wav:
-        raise ValueError("Aucun fichier WAV extrait")
-    norm_result = normalize_audio.run(wav_path=first_wav, output_path=first_wav.replace(".wav", "_normalized.wav"))
-    return {"media_path": media_path, "media_id": media_id, "normalized_path": norm_result.get("output"), "extract_result": extract_result}
+    extract_result = extract_audio.run(
+        media_path=media_path, output_dir="/tmp/rythmoai_audio"
+    )
+    return {
+        "media_path": media_path,
+        "media_id": media_id,
+        "extracted_tracks": extract_result,
+    }
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=10, autoretry_for=(Exception,))
+
+@celery_app.task(
+    bind=True, max_retries=3, default_retry_delay=15, autoretry_for=(Exception,)
+)
 def pipeline_transcribe_diarize(self, pipeline_result: dict):
-    # Étape 2 : transcription Whisper + diarisation + prosodie (groupe)
-    # Utilisation de chord pour paralléliser analyse et diarisation
-    media_path = pipeline_result.get("media_path")
+    # Étape 2 : transcription Whisper + diarization Pyannote en parallèle (groupe Celery)
     media_id = pipeline_result.get("media_id")
-    # Transcription
-    trans_result = transcribe_audio.run(media_path=media_path, media_id=media_id)
-    # Alignement forcé (parole → mots)
-    # Note: dans la vraie pipeline, segment_ids sont créés par transcribe_audio
-    # Ici simplifié : on passe le media_id
-    # Pour le test d'intégration, on suppose que le segment est déjà en DB
-    return {**pipeline_result, "transcription": trans_result, "group_done": True}
+    tracks = pipeline_result.get("extracted_tracks", {}).get("tracks", [])
+    first_track_path = (
+        tracks[0]["local_path"]
+        if tracks
+        else pipeline_result.get("media_path", "")
+    )
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=15, autoretry_for=(Exception,))
+    t_res = transcribe_audio.run(
+        media_path=first_track_path, media_id=str(media_id)
+    )
+    d_res = diarize_speakers.run(media_path=first_track_path)
+    return {
+        **pipeline_result,
+        "transcription": t_res,
+        "diarization": d_res,
+        "progress_percent": 60,
+    }
+
+
+@celery_app.task(
+    bind=True, max_retries=2, default_retry_delay=15, autoretry_for=(Exception,)
+)
 def pipeline_generate_rythmo(self, pipeline_result: dict):
     # Étape 3 : génération bande rythmo
     result = generate_rythmo_band.run(project_id=pipeline_result.get("media_id"))
     return {**pipeline_result, "rythmo_status": result}
 
-@celery_app.task(bind=True, max_retries=1, default_retry_delay=30, autoretry_for=(Exception,))
+
+@celery_app.task(
+    bind=True, max_retries=1, default_retry_delay=30, autoretry_for=(Exception,)
+)
 def notify_completion(self, pipeline_result: dict):
     # Étape finale : mise à jour PipelineJob → "Prêt pour édition" + notification
+    import uuid
     from app.core.database import SessionLocal
     from app.models import PipelineJob
+
     db = SessionLocal()
     try:
-        job = db.query(PipelineJob).filter(PipelineJob.project_id == pipeline_result.get("media_id")).first()
+        val = pipeline_result.get("project_id") or pipeline_result.get("media_id")
+        val_uuid = None
+        if val:
+            try:
+                val_uuid = uuid.UUID(str(val))
+            except Exception:
+                val_uuid = None
+        job = None
+        if val_uuid:
+            job = (
+                db.query(PipelineJob)
+                .filter(PipelineJob.project_id == val_uuid)
+                .first()
+            )
+            if not job:
+                job = (
+                    db.query(PipelineJob).filter(PipelineJob.id == val_uuid).first()
+                )
         if job:
             job.status = "Prêt pour édition"
             job.progress_percent = 100

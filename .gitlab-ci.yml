@@ -1,0 +1,25 @@
+stages:
+  - security_and_test
+  - build
+
+dependency_scan:
+  stage: security_and_test
+  image: python:3.13
+  script:
+    - pip install --upgrade pip
+    - pip install -r backend/requirements.txt pip-audit
+    - pip-audit -r backend/requirements.txt --no-deps
+
+npm_audit:
+  stage: security_and_test
+  image: node:20
+  script:
+    - cd frontend && npm ci
+    - npm audit --audit-level=high || true
+
+owasp_and_integration_tests:
+  stage: security_and_test
+  image: python:3.13
+  script:
+    - pip install -r backend/requirements.txt pytest pytest-asyncio httpx pyotp requests
+    - PYTHONPATH=backend pytest backend/tests/ -v

@@ -18,6 +18,16 @@ class Studio(Base):
         JSON, default=dict
     )
     quotas: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    security_settings: Mapped[dict | None] = mapped_column(
+        JSON,
+        default=lambda: {
+            "watermark_enabled": True,
+            "encryption_at_rest_enabled": True,
+            "encryption_in_transit_enabled": True,
+            "auto_purge_enabled": True,
+            "retention_days": 30,
+        },
+    )
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
