@@ -1,2 +1,147 @@
 body { font-family: system-ui, sans-serif; margin: 0; padding: 2rem; background: #0b0c15; color: #e8e8ec; }
 #replica-list { background: #16182e; border-radius: 8px; padding: 1rem; }
+
+/* §16.4 — Replica lock indicator */
+.replica-lock-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  pointer-events: none;
+  animation: replica-lock-pulse 2s ease-in-out infinite;
+}
+
+.replica-lock-indicator--locked {
+  background: rgba(255, 170, 51, 0.15);
+  color: #ffaa33;
+  border: 1px solid rgba(255, 170, 51, 0.3);
+}
+
+.replica-lock-indicator--conflict {
+  background: rgba(255, 77, 77, 0.15);
+  color: #ff4d4d;
+  border: 1px solid rgba(255, 77, 77, 0.3);
+  animation: none;
+}
+
+.replica-lock-indicator__icon {
+  width: 12px;
+  height: 12px;
+  opacity: 0.85;
+}
+
+.replica-lock-indicator__text {
+  white-space: nowrap;
+}
+
+/* Pulsating glow for active locks */
+@keyframes replica-lock-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Lock overlay on the replica (prevents interaction) */
+.replica-locked-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 170, 51, 0.05);
+  border: 1px dashed rgba(255, 170, 51, 0.4);
+  border-radius: 4px;
+  pointer-events: auto;
+  cursor: not-allowed;
+  z-index: 10;
+}
+
+/* §16.1 — Project status badge & readonly overlay */
+.project-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.project-status-badge--Cree { background: #2a2d45; color: #8b8fa3; }
+.project-status-badge--En_traitement { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.project-status-badge--Pret_pour_edition { background: rgba(34,197,94,0.15); color: #4ade80; }
+.project-status-badge--En_edition { background: rgba(251,191,36,0.15); color: #fbbf24; }
+.project-status-badge--En_relecture { background: rgba(168,85,247,0.15); color: #a855f7; }
+.project-status-badge--Valide { background: rgba(34,197,94,0.2); color: #22c55e; }
+.project-status-badge--Exporte_Livre { background: rgba(6,182,212,0.15); color: #06b6d4; }
+.project-status-badge--Archive { background: rgba(107,114,128,0.15); color: #6b7280; }
+
+/* Readonly overlay when project is Valide/Archive */
+.project-readonly-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(107, 114, 128, 0.06);
+  border: 2px solid rgba(107, 114, 128, 0.2);
+  border-radius: 8px;
+  pointer-events: auto;
+  cursor: not-allowed;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.project-readonly-overlay__message {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  font-weight: 500;
+  padding: 8px 16px;
+  background: rgba(11, 12, 21, 0.8);
+  border-radius: 6px;
+}
+
+/* §14.2.1 — Dashboard */
+.dash-header { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 1.5rem; }
+.dash-title { font-size: 1.5rem; font-weight: 700; margin: 0; }
+.dash-plan { font-size: 0.75rem; background: #2a2d45; color: #8b8fa3; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; font-weight: 600; }
+
+.dash-indicators { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.dash-indicator { background: #16182e; border-radius: 8px; padding: 1rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.dash-indicator-value { font-size: 1.5rem; font-weight: 700; color: #e8e8ec; }
+.dash-indicator-label { font-size: 0.75rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.dash-quota-bar { height: 4px; background: #1e2035; border-radius: 2px; overflow: hidden; margin-top: 0.5rem; }
+.dash-quota-fill { display: block; height: 100%; background: #3b82f6; border-radius: 2px; transition: width 0.3s; }
+.dash-quota-text { font-size: 0.65rem; color: #6b7280; }
+.dash-quota-warn .dash-quota-fill { background: #f59e0b; }
+.dash-quota-critical .dash-quota-fill { background: #ef4444; }
+
+.dash-filters { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.dash-filters-label { font-size: 0.8rem; color: #6b7280; }
+.dash-filter-btn {
+  background: #1e2035; color: #8b8fa3; border: 1px solid #2a2d45; border-radius: 6px;
+  padding: 4px 10px; font-size: 0.75rem; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+  transition: all 0.15s;
+}
+.dash-filter-btn:hover { border-color: #4b5563; color: #d1d5db; }
+.dash-filter-btn.active { background: #2563eb22; color: #60a5fa; border-color: #2563eb55; }
+.dash-filter-count { font-size: 0.65rem; background: #0b0c15; padding: 1px 5px; border-radius: 8px; }
+
+.dash-table { width: 100%; border-collapse: collapse; }
+.dash-table th { text-align: left; font-size: 0.7rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e2035; }
+.dash-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #12142a; }
+.dash-row:hover { background: #1a1c2e; }
+.dash-cell-title { font-weight: 500; }
+.dash-cell-pipeline { min-width: 140px; }
+
+.dash-pipeline-bar { position: relative; height: 18px; background: #1e2035; border-radius: 4px; overflow: hidden; }
+.dash-pipeline-fill { position: absolute; inset: 0; background: linear-gradient(90deg, #3b82f6, #8b5cf6); border-radius: 4px; transition: width 0.4s; }
+.dash-pipeline-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; color: #e8e8ec; z-index: 1; }
+.dash-pipeline-done { color: #22c55e; font-size: 0.8rem; }
+.dash-pipeline-failed { color: #ef4444; font-size: 0.8rem; }
+.dash-pipeline-idle { color: #4b5563; font-size: 0.8rem; }
+
+.dash-empty { color: #6b7280; font-size: 0.85rem; padding: 2rem; text-align: center; }
+.dash-error { color: #ef4444; padding: 2rem; text-align: center; }

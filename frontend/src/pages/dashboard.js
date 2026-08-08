@@ -1,153 +1,257 @@
-import { store } from '../core/store.js';
-import { initReplicaEditor } from '../components/replica_editor.js';
+/**
+ * Dashboard §14.2.1 — Vue synthétique des projets du studio.
+ *
+ * Affiche :
+ *  - Indicateurs studio (temps moyen, volume, quota)
+ *  - Liste des projets avec statut, avancement pipeline, dernière modification
+ *  - Filtres par statut
+ */
+
 import { api } from '../services/api.js';
-import { AutoSave } from '../services/autosave.js';
-import { VersionsPanel } from '../components/versions_panel.js';
-import { ExportsPanel } from '../components/exports_panel.js';
-import { CommentsPanel } from '../components/comments_panel.js';
 
-// Initialiser les raccourcis d'édition §14.4 (Ctrl+Maj+S / Ctrl+Maj+F) + undo/redo
-initReplicaEditor(store, api);
+/** Status label map for display */
+const STATUS_LABELS = {
+  Cree: 'Créé',
+  En_traitement: 'En traitement',
+  Pret_pour_edition: 'Prêt pour édition',
+  En_edition: 'En édition',
+  En_relecture: 'En relecture',
+  Valide: 'Validé',
+  Exporte_Livre: 'Exporté / Livré',
+  Archive: 'Archivé',
+};
 
-// Auto-save différée §17.3 + cache IndexedDB §7.4
-const autosave = new AutoSave(store, api, {
-  debounceMs: 3000,
-  savedResetMs: 1500,
-  projectId: store.currentProject?.id || 'default',
-});
-autosave.start();
+/**
+ * Format seconds into human-readable duration.
+ */
+function formatDuration(seconds) {
+  if (seconds === null || seconds === undefined) return '—';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}min`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  return m > 0 ? `${h}h${m}` : `${h}h`;
+}
 
-// Versions §16.1 — panneau d'historisation
-const projectId = store.currentProject?.id || '00000000-0000-0000-0000-000000000001';
-let versionsPanel = null;
-function initVersionsPanel() {
-  let container = document.getElementById('versions-panel');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'versions-panel';
-    const app = document.getElementById('app');
-    if (app) app.appendChild(container);
-    else document.body.appendChild(container);
+/**
+ * Format ISO date string into relative or short date.
+ */
+function formatDate(isoStr) {
+  if (!isoStr) return '—';
+  const d = new Date(isoStr);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'À l\'instant';
+  if (diffMin < 60) return `Il y a ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `Il y a ${diffH}h`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD < 30) return `Il y a ${diffD}j`;
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+}
+
+/**
+ * Render pipeline progress bar HTML.
+ */
+function renderPipelineProgress(pipeline) {
+  if (!pipeline) return '<span class="dash-pipeline-idle">—</span>';
+  const pct = pipeline.progress_percent || 0;
+  if (pipeline.status === 'completed') {
+    return '<span class="dash-pipeline-done">✓ Terminé</span>';
   }
-  versionsPanel = new VersionsPanel('versions-panel', projectId);
-  versionsPanel.mount();
-  if (typeof window !== 'undefined') window.versionsPanel = versionsPanel;
-}
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initVersionsPanel);
-} else {
-  initVersionsPanel();
-}
-
-// Exports PDF §A.2 — panneau d'export
-let exportsPanel = null;
-function initExportsPanel() {
-  let container = document.getElementById('exports-panel');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'exports-panel';
-    const app = document.getElementById('app');
-    if (app) app.appendChild(container);
-    else document.body.appendChild(container);
+  if (pipeline.status === 'failed') {
+    return '<span class="dash-pipeline-failed">✗ Échoué</span>';
   }
-  exportsPanel = new ExportsPanel('exports-panel', projectId);
-  exportsPanel.mount();
-  if (typeof window !== 'undefined') window.exportsPanel = exportsPanel;
-}
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initExportsPanel);
-} else {
-  initExportsPanel();
+  const step = pipeline.current_step || '';
+  return `
+    <div class="dash-pipeline-bar">
+      <div class="dash-pipeline-fill" style="width:${pct}%"></div>
+      <span class="dash-pipeline-label">${step} ${pct}%</span>
+    </div>`;
 }
 
-// Panneau latéral contextuel §14.2.4 — Fil de commentaires
-let commentsPanel = null;
-function initCommentsPanel() {
-  let container = document.getElementById('comments-panel');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'comments-panel';
-    container.setAttribute('data-testid', 'comments-panel');
-    // Créer une mise en page éditeur avec zone principale + panneau latéral
-    const app = document.getElementById('app');
-    if (app) {
-      // Créer une structure si elle n'existe pas
-      let editorLayout = document.getElementById('editor-layout');
-      if (!editorLayout) {
-        editorLayout = document.createElement('div');
-        editorLayout.id = 'editor-layout';
-        editorLayout.style.cssText = 'display:grid; grid-template-columns: 2fr 1fr; gap:1rem; margin-top:1rem;';
-        // Déplacer la replica-list dans la zone principale
-        const replicaList = document.getElementById('replica-list');
-        const mainArea = document.createElement('div');
-        mainArea.id = 'editor-main';
-        if (replicaList) mainArea.appendChild(replicaList);
-        const sidePanel = document.createElement('div');
-        sidePanel.id = 'editor-side';
-        sidePanel.appendChild(container);
-        editorLayout.appendChild(mainArea);
-        editorLayout.appendChild(sidePanel);
-        app.appendChild(editorLayout);
-      } else {
-        const side = document.getElementById('editor-side') || editorLayout;
-        side.appendChild(container);
-      }
-    } else {
-      document.body.appendChild(container);
+/**
+ * Render status badge.
+ */
+function renderStatusBadge(status) {
+  const label = STATUS_LABELS[status] || status;
+  return `<span class="project-status-badge project-status-badge--${status}">${label}</span>`;
+}
+
+/**
+ * Dashboard class — creates and manages the dashboard UI.
+ */
+export class Dashboard {
+  /**
+   * @param {string} containerId - DOM element ID to mount into
+   * @param {string} studioId - Studio UUID
+   */
+  constructor(containerId, studioId) {
+    this.containerId = containerId;
+    this.studioId = studioId;
+    this.data = null;
+    this.activeFilters = new Set();
+    this._onFilterClick = this._onFilterClick.bind(this);
+  }
+
+  async fetch() {
+    const res = await fetch(`/api/v1/studios/${this.studioId}/dashboard`);
+    if (!res.ok) throw new Error(`Dashboard fetch failed: ${res.status}`);
+    this.data = await res.json();
+    return this.data;
+  }
+
+  async mount() {
+    try {
+      this.data = await this.fetch();
+    } catch (e) {
+      this._renderError(e);
+      return;
     }
+    this._render();
   }
-  commentsPanel = new CommentsPanel('comments-panel', store);
-  commentsPanel.mount();
-  if (typeof window !== 'undefined') window.commentsPanel = commentsPanel;
-}
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initCommentsPanel);
-} else {
-  initCommentsPanel();
-}
 
-// Exposer pour debug / tests e2e
-if (typeof window !== 'undefined') {
-  window.store = store;
-  window.autosave = autosave;
-  window.api = api;
-}
-
-// Indicateur syncStatus idle/saving/saved/error (§17.3)
-function updateSyncIndicator(status) {
-  let el = document.getElementById('sync-status');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'sync-status';
-    el.setAttribute('data-testid', 'sync-status');
-    el.style.cssText = 'position:fixed;top:0.5rem;right:0.5rem;padding:0.25rem 0.5rem;border-radius:4px;font-size:0.75rem;background:#1a1c2e;color:#e8e8ec;border:1px solid #3f3f46;z-index:9999;';
-    document.body.appendChild(el);
+  refresh() {
+    return this.mount();
   }
-  const labels = {
-    idle: '—',
-    saving: 'Enregistrement…',
-    saved: '✓ Enregistré',
-    error: '⚠ Hors ligne – en cache',
-  };
-  el.textContent = labels[status] || status;
-  el.setAttribute('data-status', status);
-  if (status === 'saving') el.style.borderColor = '#3b82f6';
-  else if (status === 'saved') el.style.borderColor = '#22c55e';
-  else if (status === 'error') el.style.borderColor = '#ef4444';
-  else el.style.borderColor = '#3f3f46';
+
+  // ── Rendering ──────────────────────────────────────────
+
+  _render() {
+    const el = document.getElementById(this.containerId);
+    if (!el) return;
+
+    const { studio_name, studio_plan, projects, indicators, filters } = this.data;
+
+    el.innerHTML = `
+      <div class="dash-header">
+        <h1 class="dash-title">${studio_name}</h1>
+        <span class="dash-plan">${studio_plan || 'free'}</span>
+      </div>
+
+      <div class="dash-indicators" data-testid="dash-indicators">
+        ${this._renderIndicators(indicators)}
+      </div>
+
+      <div class="dash-filters" data-testid="dash-filters">
+        <span class="dash-filters-label">Filtrer par statut :</span>
+        <button class="dash-filter-btn ${this.activeFilters.size === 0 ? 'active' : ''}" data-status="">Tous</button>
+        ${filters.map(f => `
+          <button class="dash-filter-btn ${this.activeFilters.has(f.value) ? 'active' : ''}"
+                  data-status="${f.value}" data-testid="filter-${f.value}">
+            ${f.label}
+            <span class="dash-filter-count">${indicators.status_distribution.find(s => s.status === f.value)?.count || 0}</span>
+          </button>
+        `).join('')}
+      </div>
+
+      <div class="dash-projects" data-testid="dash-projects">
+        ${this._renderProjects(projects)}
+      </div>
+    `;
+
+    // Bind filter clicks
+    el.querySelectorAll('.dash-filter-btn').forEach(btn => {
+      btn.addEventListener('click', this._onFilterClick);
+    });
+  }
+
+  _renderIndicators(ind) {
+    const quotaWarn = ind.quota.percent_used >= 80 ? 'dash-quota-warn' : '';
+    const quotaCritical = ind.quota.percent_used >= 95 ? 'dash-quota-critical' : '';
+    return `
+      <div class="dash-indicator" data-testid="indicator-total">
+        <span class="dash-indicator-value">${ind.total_projects}</span>
+        <span class="dash-indicator-label">Projets</span>
+      </div>
+      <div class="dash-indicator" data-testid="indicator-volume">
+        <span class="dash-indicator-value">${ind.volume_month}</span>
+        <span class="dash-indicator-label">Traités (30j)</span>
+      </div>
+      <div class="dash-indicator" data-testid="indicator-avg-time">
+        <span class="dash-indicator-value">${formatDuration(ind.avg_processing_seconds)}</span>
+        <span class="dash-indicator-label">Temps moy. pipeline</span>
+      </div>
+      <div class="dash-indicator ${quotaWarn} ${quotaCritical}" data-testid="indicator-quota">
+        <span class="dash-indicator-value">${ind.quota.remaining_minutes}min</span>
+        <span class="dash-indicator-label">Quota IA restant</span>
+        <span class="dash-quota-bar" data-testid="quota-bar">
+          <span class="dash-quota-fill" style="width:${Math.min(100, ind.quota.percent_used)}%"></span>
+        </span>
+        <span class="dash-quota-text">${ind.quota.percent_used}% utilisé</span>
+      </div>
+    `;
+  }
+
+  _renderProjects(projects) {
+    const filtered = this.activeFilters.size > 0
+      ? projects.filter(p => this.activeFilters.has(p.status))
+      : projects;
+
+    if (filtered.length === 0) {
+      return '<div class="dash-empty">Aucun projet ne correspond au filtre.</div>';
+    }
+
+    return `
+      <table class="dash-table" data-testid="dash-table">
+        <thead>
+          <tr>
+            <th>Projet</th>
+            <th>Statut</th>
+            <th>Pipeline</th>
+            <th>Dernière modif</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.map(p => `
+            <tr class="dash-row" data-project-id="${p.id}" data-status="${p.status}" data-testid="project-row">
+              <td class="dash-cell-title">${p.title}</td>
+              <td class="dash-cell-status">${renderStatusBadge(p.status)}</td>
+              <td class="dash-cell-pipeline">${renderPipelineProgress(p.pipeline)}</td>
+              <td class="dash-cell-date">${formatDate(p.updated_at)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  _renderError(e) {
+    const el = document.getElementById(this.containerId);
+    if (!el) return;
+    el.innerHTML = `<div class="dash-error">Erreur de chargement : ${e.message}</div>`;
+  }
+
+  _onFilterClick(e) {
+    const btn = e.currentTarget;
+    const status = btn.dataset.status;
+
+    if (!status) {
+      // "Tous" — clear all filters
+      this.activeFilters.clear();
+    } else if (this.activeFilters.has(status)) {
+      this.activeFilters.delete(status);
+    } else {
+      this.activeFilters.add(status);
+    }
+
+    this._render();
+  }
 }
 
-store.subscribe('syncStatus', (e) => {
-  updateSyncIndicator(e.detail.syncStatus);
-});
-updateSyncIndicator(store.syncStatus);
-
-store.subscribe('replicas', () => {
-  const el = document.getElementById('replica-list');
-  if (el) el.innerHTML = `<pre>${JSON.stringify(store.replicas, null, 2)}</pre>`;
-});
-// Projet fictif par défaut pour la démo / tests
-store.setProject({ id: projectId, title: 'Projet Démo', studio_id: '00000000-0000-0000-0000-000000000002' });
-store.setReplicas([
-  { id: 'r-01', text: 'Bonjour le monde', start_ms: 0, end_ms: 2500, confidence_score: 0.94, speaker_id: 'spk-01' }
-]);
+/**
+ * Pure function version for SSR / test rendering.
+ */
+export function renderDashboardHTML(data, activeFilters = new Set()) {
+  const dash = new Dashboard('_ssr', data.studio_id);
+  dash.data = data;
+  dash.activeFilters = activeFilters;
+  const temp = document.createElement('div');
+  temp.id = '_ssr';
+  document.body.appendChild(temp);
+  dash._render();
+  const html = temp.innerHTML;
+  temp.remove();
+  return html;
+}

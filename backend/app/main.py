@@ -28,9 +28,12 @@ app.include_router(
 )
 app.include_router(rythmo.router, prefix="/api/v1", tags=["rythmo"])
 app.include_router(exports.router, prefix="/api/v1", tags=["exports"])
-from app.api.v1 import media, pipeline_ws, speakers, replicas, comments
+from app.api.v1 import media, pipeline_ws, speakers, replicas, comments, replica_lock_ws, project_lifecycle, dashboard
 app.include_router(media.router, tags=["media"])
 app.include_router(pipeline_ws.router, tags=["pipeline"])
 app.include_router(speakers.router, tags=["speakers"])
 app.include_router(replicas.router, prefix="/api/v1", tags=["replicas"])
+app.include_router(replica_lock_ws.router, prefix="/api/v1", tags=["replica-locks"])
+app.include_router(project_lifecycle.router, prefix="/api/v1", tags=["project-lifecycle"])
+app.include_router(dashboard.router, prefix="/api/v1", tags=["dashboard"])
 app.include_router(comments.router, prefix="/api/v1", tags=["comments"])

@@ -43,7 +43,51 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (res.status === 409) {
+      // §16.4 — optimistic lock conflict
+      const err = await res.json().catch(() => ({}));
+      const conflictErr = new Error(err.detail?.message || 'Conflit de version');
+      conflictErr.status = 409;
+      conflictErr.detail = err.detail;
+      throw conflictErr;
+    }
     if (!res.ok) throw new Error(`patch failed ${res.status}`);
+    return res.json();
+  },
+
+  // ==================== Replica Locks §16.4 ====================
+
+  async acquireReplicaLock(replicaId, userId, userName) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/lock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, user_name: userName }),
+    });
+    if (!res.ok) throw new Error(`acquire lock failed ${res.status}`);
+    return res.json();
+  },
+
+  async releaseReplicaLock(replicaId, userId) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/lock?user_id=${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(`release lock failed ${res.status}`);
+    return res.json();
+  },
+
+  async replicaLockHeartbeat(replicaId, userId) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId }),
+    });
+    if (!res.ok) throw new Error(`heartbeat failed ${res.status}`);
+    return res.json();
+  },
+
+  async getReplicaLockStatus(replicaId) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/lock`);
+    if (!res.ok) throw new Error(`get lock status failed ${res.status}`);
     return res.json();
   },
 
@@ -136,6 +180,83 @@ export const api = {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error(`deleteComment failed ${res.status}`);
+    return res.json();
+  },
+
+  // ==================== Project Lifecycle §16.1 ====================
+
+  async getProjectStatus(projectId) {
+    const res = await fetch(`/api/v1/projects/${projectId}/status`);
+    if (!res.ok) throw new Error(`getProjectStatus failed ${res.status}`);
+    return res.json();
+  },
+
+  async transitionProjectStatus(projectId, status, { comment, userId, userRole } = {}) {
+    const res = await fetch(`/api/v1/projects/${projectId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, comment, user_id: userId, user_role: userRole }),
+    });
+    if (res.status === 403) {
+      const err = await res.json().catch(() => ({}));
+      const forbiddenErr = new Error(err.detail?.message || 'Transition interdite');
+      forbiddenErr.status = 403;
+      forbiddenErr.detail = err.detail;
+      throw forbiddenErr;
+    }
+    if (!res.ok) throw new Error(`transitionProjectStatus failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async validateProject(projectId, { userId, userRole, comment } = {}) {
+    const res = await fetch(`/api/v1/projects/${projectId}/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, user_role: userRole, comment }),
+    });
+    if (res.status === 403) {
+      const err = await res.json().catch(() => ({}));
+      const forbiddenErr = new Error(err.detail?.message || 'Validation interdite');
+      forbiddenErr.status = 403;
+      forbiddenErr.detail = err.detail;
+      throw forbiddenErr;
+    }
+    if (!res.ok) throw new Error(`validateProject failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async unlockProject(projectId, { userId, userRole, comment } = {}) {
+    const res = await fetch(`/api/v1/projects/${projectId}/unlock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, user_role: userRole, comment }),
+    });
+    if (!res.ok) throw new Error(`unlockProject failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async listProjectStatuses() {
+    const res = await fetch(`/api/v1/projects/statuses`);
+    if (!res.ok) throw new Error(`listProjectStatuses failed ${res.status}`);
+    return res.json();
+  },
+
+  // ==================== Dashboard §14.2.1 ====================
+
+  async getStudioDashboard(studioId) {
+    const res = await fetch(`/api/v1/studios/${studioId}/dashboard`);
+    if (!res.ok) throw new Error(`getStudioDashboard failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async listStudioProjects(studioId, { status, statuses, page, perPage } = {}) {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (statuses) params.set('statuses', statuses);
+    if (page) params.set('page', String(page));
+    if (perPage) params.set('per_page', String(perPage));
+    const res = await fetch(`/api/v1/studios/${studioId}/projects?${params.toString()}`);
+    if (!res.ok) throw new Error(`listStudioProjects failed ${res.status}: ${await res.text()}`);
     return res.json();
   },
 };

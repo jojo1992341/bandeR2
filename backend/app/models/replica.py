@@ -20,6 +20,7 @@ class Replica(Base):
     confidence_score: Mapped[float] = mapped_column(Numeric(4, 3), nullable=True, default=0.0)
     is_manually_edited: Mapped[bool] = mapped_column(Boolean, default=False)
     breath_marker: Mapped[bool] = mapped_column(Boolean, default=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)  # §16.4 optimistic lock counter
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
