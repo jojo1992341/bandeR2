@@ -28,6 +28,7 @@ from app.api.v1 import (
     words,
     sso,
     crdt,
+    public_api,
 )
 from app.core.config import get_settings
 from app.core.logging import logger
@@ -111,3 +112,6 @@ app.include_router(crdt.router, prefix="/api/v1", tags=["crdt"])
 app.include_router(crdt.router, tags=["crdt-alt"])
 app.include_router(words.router, prefix="/api/v1", tags=["words"])
 app.include_router(words.router, tags=["words-alt"])
+# §25.4 — API publique (intégrations ERP/plateformes de droits) + webhooks
+app.include_router(public_api.router, prefix="/api/v1", tags=["public-api"])
+app.include_router(public_api.router, tags=["public-api-alt"])
