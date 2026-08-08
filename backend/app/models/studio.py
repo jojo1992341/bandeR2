@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy import String, JSON, Integer, DateTime, func
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 from typing import List
@@ -15,9 +15,9 @@ class Studio(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     plan: Mapped[str | None] = mapped_column(String(50), default="free")
     custom_typographic_profiles: Mapped[dict | None] = mapped_column(
-        JSONB, default=dict
+        JSON, default=dict
     )
-    quotas: Mapped[dict | None] = mapped_column(JSONB, default=dict)
+    quotas: Mapped[dict | None] = mapped_column(JSON, default=dict)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
