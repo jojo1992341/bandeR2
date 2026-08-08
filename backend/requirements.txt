@@ -14,3 +14,8 @@ reportlab>=4.0.0
 pyotp>=2.10.0
 requests>=2.31.0
 pyphen>=0.14.0
+# §12.1 — Séparation de sources dialogue/musique/effets (backend spectral sans dépendance lourde)
+numpy>=1.26.0
+scipy>=1.11.0
+# Backend profond optionnel (non installé par défaut) :
+#   pip install demucs>=4.0.0  # active SOURCE_SEPARATION_BACKEND=demucs|auto

@@ -61,28 +61,85 @@ try:
 except ImportError:
     detect_lip_sync = None
 
+# §12.1 — Séparation de sources (dialogue/musique/effets), option de pipeline V2
+try:
+    from app.tasks.source_separation import separate_sources, maybe_separate_dialogue
+except ImportError:
+    separate_sources = None
+
+    def maybe_separate_dialogue(media_path, options=None, output_dir="/tmp/rythmoai_separation"):  # type: ignore
+        return media_path
+
+
 logger = logging.getLogger("rythmoai")
 
 
 @celery_app.task(
     bind=True, max_retries=3, default_retry_delay=10, autoretry_for=(Exception,)
 )
-def pipeline_extract_normalize(self, media_path: str, media_id: str):
+def pipeline_extract_normalize(
+    self, media_path: str, media_id: str, pipeline_options: dict | None = None
+):
     # Étape 1 : extraction + normalisation EBU R128
+    pipeline_options = pipeline_options or {}
     try:
         if extract_audio is not None:
             extract_result = extract_audio.run(
                 media_path=media_path, output_dir="/tmp/rythmoai_audio"
             )
         else:
-            extract_result = {"tracks": [{"local_path": media_path}], "status": "fallback_no_extract"}
+            extract_result = {
+                "tracks": [{"local_path": media_path}],
+                "status": "fallback_no_extract",
+            }
     except Exception as e:
         logger.warning(f"extract_audio fallback: {e}")
-        extract_result = {"tracks": [{"local_path": media_path}], "status": "fallback_error"}
+        extract_result = {
+            "tracks": [{"local_path": media_path}],
+            "status": "fallback_error",
+        }
+
+    # §12.1 — Séparation de sources optionnelle sur chaque piste extraite.
+    # Quand activée, la piste « dialogue » devient la référence pour la
+    # transcription (amélioration du WER sur mixages avec musique/effets forts).
+    separation_result = {"status": "skipped", "reason": "not_requested"}
+    separation_enabled = bool(pipeline_options.get("enable_source_separation"))
+    if not separation_enabled:
+        try:
+            from app.ai.source_separator import is_separation_enabled
+
+            separation_enabled = is_separation_enabled()
+        except Exception:
+            separation_enabled = False
+
+    if separation_enabled and separate_sources is not None:
+        for track in extract_result.get("tracks", []):
+            try:
+                sep = separate_sources.run(
+                    media_path=track.get("local_path", media_path),
+                    output_dir="/tmp/rythmoai_separation",
+                    backend=pipeline_options.get("source_separation_backend"),
+                    media_id=str(media_id),
+                )
+                if sep.get("status") == "ok" and sep.get("dialogue_path"):
+                    track["dialogue_path"] = sep["dialogue_path"]
+                    track["stems"] = sep.get("stems", {})
+                    separation_result = sep
+                else:
+                    separation_result = sep
+            except Exception as e:
+                logger.warning(f"source_separation fallback: {e}")
+                separation_result = {
+                    "status": "error",
+                    "error": str(e),
+                }
+
     return {
         "media_path": media_path,
         "media_id": media_id,
+        "pipeline_options": pipeline_options,
         "extracted_tracks": extract_result,
+        "source_separation": separation_result,
     }
 
 
@@ -94,24 +151,38 @@ def pipeline_transcribe_diarize(self, pipeline_result: dict):
     media_id = pipeline_result.get("media_id")
     tracks = pipeline_result.get("extracted_tracks", {}).get("tracks", [])
     first_track_path = (
-        tracks[0]["local_path"]
-        if tracks
-        else pipeline_result.get("media_path", "")
+        tracks[0]["local_path"] if tracks else pipeline_result.get("media_path", "")
     )
+    # §12.1 — si la séparation de sources a été activée et a produit un stem
+    # « dialogue », on l'utilise de préférence pour la transcription (meilleur WER).
+    transcript_input_path = first_track_path
+    if tracks and tracks[0].get("dialogue_path"):
+        transcript_input_path = tracks[0]["dialogue_path"]
 
     try:
         if transcribe_audio is not None:
             t_res = transcribe_audio.run(
-                media_path=first_track_path, media_id=str(media_id)
+                media_path=transcript_input_path, media_id=str(media_id)
             )
         else:
-            t_res = {"media_id": str(media_id), "language": "fr", "segments_count": 1, "status": "fallback"}
+            t_res = {
+                "media_id": str(media_id),
+                "language": "fr",
+                "segments_count": 1,
+                "status": "fallback",
+            }
     except Exception as e:
         logger.warning(f"transcribe_audio fallback: {e}")
-        t_res = {"media_id": str(media_id), "language": "fr", "segments_count": 1, "status": "fallback_error"}
+        t_res = {
+            "media_id": str(media_id),
+            "language": "fr",
+            "segments_count": 1,
+            "status": "fallback_error",
+            "error": str(e),
+        }
     try:
         if diarize_speakers is not None:
-            d_res = diarize_speakers.run(media_path=first_track_path)
+            d_res = diarize_speakers.run(media_path=transcript_input_path)
         else:
             d_res = {"speakers": [], "status": "fallback"}
     except Exception as e:
@@ -126,7 +197,7 @@ def pipeline_transcribe_diarize(self, pipeline_result: dict):
         try:
             svc = SilenceService(db)
             svc.detect_and_persist_silences(
-                uuid.UUID(str(media_id)), first_track_path
+                uuid.UUID(str(media_id)), transcript_input_path
             )
         finally:
             db.close()
@@ -136,9 +207,9 @@ def pipeline_transcribe_diarize(self, pipeline_result: dict):
         **pipeline_result,
         "transcription": t_res,
         "diarization": d_res,
+        "transcript_input_path": transcript_input_path,
         "progress_percent": 60,
     }
-
 
 
 @celery_app.task(
@@ -150,14 +221,27 @@ def pipeline_detect_lip_sync(self, pipeline_result: dict):
     """
     import uuid
     from app.core.config import get_settings
+
     settings = get_settings()
     # Vérifier feature flag
     import os
-    flag_env = os.getenv("FEATURE_LIP_SYNC", os.getenv("FEATURE_FLAG_LIP_SYNC", os.getenv("ENABLE_LIP_SYNC", ""))).lower() in ("1", "true", "yes", "on")
-    flag = settings.FEATURE_LIP_SYNC_ENABLED or settings.LIP_SYNC_ENABLED or flag_env or settings.is_feature_enabled("lip_sync")
+
+    flag_env = os.getenv(
+        "FEATURE_LIP_SYNC",
+        os.getenv("FEATURE_FLAG_LIP_SYNC", os.getenv("ENABLE_LIP_SYNC", "")),
+    ).lower() in ("1", "true", "yes", "on")
+    flag = (
+        settings.FEATURE_LIP_SYNC_ENABLED
+        or settings.LIP_SYNC_ENABLED
+        or flag_env
+        or settings.is_feature_enabled("lip_sync")
+    )
     if not flag:
         logger.info("Lip sync feature flag désactivé — skip")
-        pipeline_result["lip_sync"] = {"status": "skipped", "reason": "feature_flag_disabled"}
+        pipeline_result["lip_sync"] = {
+            "status": "skipped",
+            "reason": "feature_flag_disabled",
+        }
         return pipeline_result
     # Tenter détection
     try:
@@ -171,10 +255,13 @@ def pipeline_detect_lip_sync(self, pipeline_result: dict):
                 logger.info(f"Lip sync détecté via Celery: {res}")
                 return pipeline_result
             except Exception as e:
-                logger.warning(f"detect_lip_sync.run échoué, fallback service direct: {e}")
+                logger.warning(
+                    f"detect_lip_sync.run échoué, fallback service direct: {e}"
+                )
         # Fallback direct via service
         from app.core.database import SessionLocal
         from app.services.lip_sync_service import LipSyncService
+
         db = SessionLocal()
         try:
             if media_id:
@@ -185,12 +272,19 @@ def pipeline_detect_lip_sync(self, pipeline_result: dict):
                     # Essayer de récupérer depuis MediaAsset
                     try:
                         from app.models import MediaAsset
-                        m = db.query(MediaAsset).filter(MediaAsset.id == uuid.UUID(str(media_id))).first()
+
+                        m = (
+                            db.query(MediaAsset)
+                            .filter(MediaAsset.id == uuid.UUID(str(media_id)))
+                            .first()
+                        )
                         if m and m.storage_path and os.path.exists(m.storage_path):
                             video_path = m.storage_path
                     except:
                         pass
-                res = svc.detect_and_persist(uuid.UUID(str(media_id)), video_path or media_path or "")
+                res = svc.detect_and_persist(
+                    uuid.UUID(str(media_id)), video_path or media_path or ""
+                )
                 pipeline_result["lip_sync"] = res
                 return pipeline_result
         finally:
@@ -200,6 +294,7 @@ def pipeline_detect_lip_sync(self, pipeline_result: dict):
         pipeline_result["lip_sync"] = {"status": "warning", "error": str(e)}
         return pipeline_result
     return pipeline_result
+
 
 @celery_app.task(
     bind=True, max_retries=2, default_retry_delay=15, autoretry_for=(Exception,)
@@ -211,21 +306,30 @@ def pipeline_generate_rythmo(self, pipeline_result: dict):
             # Passer le profil si disponible
             kwargs = {}
             if pipeline_result.get("typographic_profile_id"):
-                kwargs["typographic_profile_id"] = pipeline_result.get("typographic_profile_id")
-            result = generate_rythmo_band.run(project_id=pipeline_result.get("media_id"), **kwargs)
+                kwargs["typographic_profile_id"] = pipeline_result.get(
+                    "typographic_profile_id"
+                )
+            result = generate_rythmo_band.run(
+                project_id=pipeline_result.get("media_id"), **kwargs
+            )
             # Si le stub retourne fallback, tenter génération réelle via RythmoEngine + profil
             if isinstance(result, dict) and result.get("status") == "fallback":
                 raise RuntimeError("fallback trigger real generation")
         else:
             raise RuntimeError("generate_rythmo_band not available")
     except Exception as e:
-        logger.info(f"pipeline_generate_rythmo: tentative génération via RythmoEngine avec profil: {e}")
+        logger.info(
+            f"pipeline_generate_rythmo: tentative génération via RythmoEngine avec profil: {e}"
+        )
         try:
             import uuid
             from app.core.database import SessionLocal
             from app.models import Project, MediaAsset, Replica, Word, TranscriptSegment
-            from app.services.typographic_profile_service import TypographicProfileService
+            from app.services.typographic_profile_service import (
+                TypographicProfileService,
+            )
             from app.services.rythmo_engine import RythmoEngine
+
             db = SessionLocal()
             try:
                 media_id_val = pipeline_result.get("media_id")
@@ -235,45 +339,120 @@ def pipeline_generate_rythmo(self, pipeline_result: dict):
                 project = None
                 if media_id_val:
                     try:
-                        media = db.query(MediaAsset).filter(MediaAsset.id == uuid.UUID(str(media_id_val))).first()
+                        media = (
+                            db.query(MediaAsset)
+                            .filter(MediaAsset.id == uuid.UUID(str(media_id_val)))
+                            .first()
+                        )
                         if media:
-                            project = db.query(Project).filter(Project.id == media.project_id).first()
-                    except: pass
+                            project = (
+                                db.query(Project)
+                                .filter(Project.id == media.project_id)
+                                .first()
+                            )
+                    except:
+                        pass
                 if not project and project_id_val:
                     try:
-                        project = db.query(Project).filter(Project.id == uuid.UUID(str(project_id_val))).first()
-                    except: pass
+                        project = (
+                            db.query(Project)
+                            .filter(Project.id == uuid.UUID(str(project_id_val)))
+                            .first()
+                        )
+                    except:
+                        pass
                 effective_profile = None
                 if project:
                     svc = TypographicProfileService(db)
                     typ_profile_id = pipeline_result.get("typographic_profile_id")
                     if typ_profile_id:
                         try:
-                            effective_profile = svc.get_effective_profile(project.studio_id, uuid.UUID(str(typ_profile_id)))
-                        except: effective_profile = svc.get_effective_profile(project.studio_id, None)
+                            effective_profile = svc.get_effective_profile(
+                                project.studio_id, uuid.UUID(str(typ_profile_id))
+                            )
+                        except:
+                            effective_profile = svc.get_effective_profile(
+                                project.studio_id, None
+                            )
                     else:
-                        effective_profile = svc.get_effective_profile(project.studio_id, None)
+                        effective_profile = svc.get_effective_profile(
+                            project.studio_id, None
+                        )
                 engine = RythmoEngine(profile=effective_profile)
                 # Charger les mots si media disponible
                 if media:
-                    words = db.query(Word).filter(Word.segment_id.in_(db.query(TranscriptSegment.id).filter(TranscriptSegment.media_id == media.id))).order_by(Word.start_ms).all()
-                    word_dicts = [{"text": w.text, "start_ms": w.start_ms, "end_ms": w.end_ms, "speaker_id": w.speaker_id} for w in words]
+                    words = (
+                        db.query(Word)
+                        .filter(
+                            Word.segment_id.in_(
+                                db.query(TranscriptSegment.id).filter(
+                                    TranscriptSegment.media_id == media.id
+                                )
+                            )
+                        )
+                        .order_by(Word.start_ms)
+                        .all()
+                    )
+                    word_dicts = [
+                        {
+                            "text": w.text,
+                            "start_ms": w.start_ms,
+                            "end_ms": w.end_ms,
+                            "speaker_id": w.speaker_id,
+                        }
+                        for w in words
+                    ]
                     if not word_dicts:
-                        word_dicts = [{"text": "...", "start_ms": 0, "end_ms": 1000, "speaker_id": None}]
+                        word_dicts = [
+                            {
+                                "text": "...",
+                                "start_ms": 0,
+                                "end_ms": 1000,
+                                "speaker_id": None,
+                            }
+                        ]
                     replicas = engine.segment_words(word_dicts)
                     for r in replicas:
                         typo = r.get("typo_codes") or {}
-                        rep = Replica(id=uuid.uuid4(), media_id=media.id, text=r["text"], start_ms=r["start_ms"], end_ms=r["end_ms"], speaker_id=r.get("speaker_id"), confidence_score=0.85, is_manually_edited=False, breath_marker=r.get("has_breath_marker", False), order_index=len(db.query(Replica).filter(Replica.media_id == media.id).all()), typo_codes=typo)
+                        rep = Replica(
+                            id=uuid.uuid4(),
+                            media_id=media.id,
+                            text=r["text"],
+                            start_ms=r["start_ms"],
+                            end_ms=r["end_ms"],
+                            speaker_id=r.get("speaker_id"),
+                            confidence_score=0.85,
+                            is_manually_edited=False,
+                            breath_marker=r.get("has_breath_marker", False),
+                            order_index=len(
+                                db.query(Replica)
+                                .filter(Replica.media_id == media.id)
+                                .all()
+                            ),
+                            typo_codes=typo,
+                        )
                         db.add(rep)
                     db.commit()
-                    result = {"task": "generate_rythmo_band", "status": "generated_via_engine", "replica_count": len(replicas), "profile": effective_profile}
+                    result = {
+                        "task": "generate_rythmo_band",
+                        "status": "generated_via_engine",
+                        "replica_count": len(replicas),
+                        "profile": effective_profile,
+                    }
                 else:
-                    result = {"task": "generate_rythmo_band", "status": "fallback_no_media"}
+                    result = {
+                        "task": "generate_rythmo_band",
+                        "status": "fallback_no_media",
+                    }
             finally:
                 db.close()
         except Exception as inner:
             logger.warning(f"RythmoEngine fallback failed: {inner}")
-            result = {"task": "generate_rythmo_band", "status": "fallback_error", "error": str(inner)}
+            result = {
+                "task": "generate_rythmo_band",
+                "status": "fallback_error",
+                "error": str(inner),
+            }
     # §8.2.6 / §11.4 — Raffinement labial sur gros plans (feature flag §19.3)
     # Si lip_sync a été détecté, on raffine les répliques générées
     try:
@@ -286,8 +465,15 @@ def pipeline_generate_rythmo(self, pipeline_result: dict):
             from app.services.lip_sync_service import LipSyncService as _LipService
             from app.core.config import get_settings as _get_settings
             import os as _os
+
             _settings = _get_settings()
-            _flag = _settings.FEATURE_LIP_SYNC_ENABLED or _settings.LIP_SYNC_ENABLED or _os.getenv("FEATURE_LIP_SYNC","").lower() in ("1","true","yes","on") or _settings.is_feature_enabled("lip_sync")
+            _flag = (
+                _settings.FEATURE_LIP_SYNC_ENABLED
+                or _settings.LIP_SYNC_ENABLED
+                or _os.getenv("FEATURE_LIP_SYNC", "").lower()
+                in ("1", "true", "yes", "on")
+                or _settings.is_feature_enabled("lip_sync")
+            )
             if _flag:
                 _db = _SessionLocal()
                 try:
@@ -296,7 +482,16 @@ def pipeline_generate_rythmo(self, pipeline_result: dict):
                         _svc = _LipService(_db)
                         _curve = _svc.get_curve(_uuid.UUID(str(_media_id)))
                         if _curve:
-                            lip_data = {"curve": _curve, "status": "ok", "face_visible_ratio": sum(1 for c in _curve if c.get("face_visible"))/len(_curve) if _curve else 0}
+                            lip_data = {
+                                "curve": _curve,
+                                "status": "ok",
+                                "face_visible_ratio": (
+                                    sum(1 for c in _curve if c.get("face_visible"))
+                                    / len(_curve)
+                                    if _curve
+                                    else 0
+                                ),
+                            }
                             pipeline_result["lip_sync"] = lip_data
                 finally:
                     _db.close()
@@ -304,33 +499,63 @@ def pipeline_generate_rythmo(self, pipeline_result: dict):
             import uuid as _uuid2
             from app.core.database import SessionLocal as _SessionLocal2
             from app.models import Replica as _Replica
+
             _db2 = _SessionLocal2()
             try:
                 _media_id2 = pipeline_result.get("media_id")
                 if _media_id2:
-                    replicas_db = _db2.query(_Replica).filter(_Replica.media_id == _uuid2.UUID(str(_media_id2))).order_by(_Replica.order_index, _Replica.start_ms).all()
+                    replicas_db = (
+                        _db2.query(_Replica)
+                        .filter(_Replica.media_id == _uuid2.UUID(str(_media_id2)))
+                        .order_by(_Replica.order_index, _Replica.start_ms)
+                        .all()
+                    )
                     if replicas_db:
-                        from app.services.lip_sync_service import LipSyncService as _LipSvc2
+                        from app.services.lip_sync_service import (
+                            LipSyncService as _LipSvc2,
+                        )
+
                         _svc2 = _LipSvc2(_db2)
                         # Convertir répliques DB en dict pour raffinement
-                        rep_dicts = [{"id": str(r.id), "text": r.text, "start_ms": r.start_ms, "end_ms": r.end_ms, "speaker_id": str(r.speaker_id) if r.speaker_id else None} for r in replicas_db]
-                        refined, metrics = _svc2.refine_replicas(rep_dicts, _uuid2.UUID(str(_media_id2)))
+                        rep_dicts = [
+                            {
+                                "id": str(r.id),
+                                "text": r.text,
+                                "start_ms": r.start_ms,
+                                "end_ms": r.end_ms,
+                                "speaker_id": (
+                                    str(r.speaker_id) if r.speaker_id else None
+                                ),
+                            }
+                            for r in replicas_db
+                        ]
+                        refined, metrics = _svc2.refine_replicas(
+                            rep_dicts, _uuid2.UUID(str(_media_id2))
+                        )
                         # Appliquer les ajustements en DB
                         for orig, ref in zip(replicas_db, refined):
-                            if ref["start_ms"] != orig.start_ms or ref["end_ms"] != orig.end_ms:
+                            if (
+                                ref["start_ms"] != orig.start_ms
+                                or ref["end_ms"] != orig.end_ms
+                            ):
                                 orig.start_ms = ref["start_ms"]
                                 orig.end_ms = ref["end_ms"]
                         _db2.commit()
                         pipeline_result["lip_sync_refinement"] = metrics
                         logger.info(f"Lip sync raffinement: {metrics}")
                     else:
-                        pipeline_result["lip_sync_refinement"] = {"status": "no_replicas"}
+                        pipeline_result["lip_sync_refinement"] = {
+                            "status": "no_replicas"
+                        }
                 else:
                     pipeline_result["lip_sync_refinement"] = {"status": "no_media"}
             finally:
                 _db2.close()
         else:
-            pipeline_result["lip_sync_refinement"] = {"status": "skipped", "reason": lip_data.get("reason") if lip_data else "no_curve"}
+            pipeline_result["lip_sync_refinement"] = {
+                "status": "skipped",
+                "reason": lip_data.get("reason") if lip_data else "no_curve",
+            }
     except Exception as e:
         logger.warning(f"Lip sync refinement warning (non-bloquant): {e}")
         pipeline_result["lip_sync_refinement"] = {"status": "warning", "error": str(e)}
@@ -353,7 +578,10 @@ def pipeline_generate_rythmo(self, pipeline_result: dict):
                     pipeline_result["emotion_detection"] = res
                 except Exception as inner:
                     logger.warning(f"Emotion detection warning (non-bloquant): {inner}")
-                    pipeline_result["emotion_detection"] = {"status": "warning", "error": str(inner)}
+                    pipeline_result["emotion_detection"] = {
+                        "status": "warning",
+                        "error": str(inner),
+                    }
         finally:
             db.close()
     except Exception as e:
@@ -384,7 +612,10 @@ def pipeline_detect_emotions(self, pipeline_result: dict):
         if project_id_val:
             res = svc.analyze_project(uuid.UUID(str(project_id_val)))
             return {**pipeline_result, "emotion_detection": res}
-        return {**pipeline_result, "emotion_detection": {"status": "skipped", "reason": "no media/project id"}}
+        return {
+            **pipeline_result,
+            "emotion_detection": {"status": "skipped", "reason": "no media/project id"},
+        }
     finally:
         db.close()
 
@@ -410,14 +641,10 @@ def notify_completion(self, pipeline_result: dict):
         job = None
         if val_uuid:
             job = (
-                db.query(PipelineJob)
-                .filter(PipelineJob.project_id == val_uuid)
-                .first()
+                db.query(PipelineJob).filter(PipelineJob.project_id == val_uuid).first()
             )
             if not job:
-                job = (
-                    db.query(PipelineJob).filter(PipelineJob.id == val_uuid).first()
-                )
+                job = db.query(PipelineJob).filter(PipelineJob.id == val_uuid).first()
             if not job:
                 job = PipelineJob(
                     id=uuid.uuid4(),
@@ -433,11 +660,7 @@ def notify_completion(self, pipeline_result: dict):
             job.current_step = "export"
             from app.models import Project
 
-            project = (
-                db.query(Project)
-                .filter(Project.id == job.project_id)
-                .first()
-            )
+            project = db.query(Project).filter(Project.id == job.project_id).first()
             if project:
                 project.status = "Pret_pour_edition"
             db.commit()
