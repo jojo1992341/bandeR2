@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from app.core.database import get_db
 from app.core.auth_handler import create_invite_token
 from app.core.rbac import get_current_user_payload, normalize_role
+from app.core.audit import record_audit_log
 from app.models import Studio, User, StudioMembership, StudioInvitation
 
 router = APIRouter()
@@ -135,6 +136,24 @@ def invite_user(
     # Construire le lien d'activation (pour le test, on retourne le token)
     invite_link = f"/auth/activate?token={invite_token}"
 
+    try:
+        record_audit_log(
+            db,
+            "studio_invite",
+            user_id=(
+                uuid.UUID(payload.get("sub")) if payload.get("sub") else None
+            ),
+            user_email=payload.get("email"),
+            studio_id=studio_id,
+            details={
+                "invited_email": data.email,
+                "role": normalized_role,
+                "invitation_id": str(invitation.id),
+            },
+        )
+    except Exception:
+        pass
+
     return InviteOut(
         id=str(invitation.id),
         studio_id=str(studio_id),
@@ -243,10 +262,26 @@ def update_user_role(
     # Pour les tests, on met aussi à jour User.role pour que le login reflète le nouveau rôle
     user = db.query(User).filter(User.id == user_id).first()
     if user:
-        # On ne met à jour que si l'utilisateur n'a qu'un seul studio ou si on veut que le rôle global suive
-        # Pour les tests d'intégration, on veut que le login retourne le nouveau rôle, donc on le met à jour
         user.role = normalized_role
         db.commit()
+
+    try:
+        record_audit_log(
+            db,
+            "role_change",
+            user_id=(
+                uuid.UUID(payload.get("sub")) if payload.get("sub") else None
+            ),
+            user_email=payload.get("email"),
+            studio_id=studio_id,
+            details={
+                "target_user_id": str(user_id),
+                "old_role": old_role,
+                "new_role": normalized_role,
+            },
+        )
+    except Exception:
+        pass
 
     return {
         "user_id": str(user_id),
@@ -275,6 +310,19 @@ def remove_user_from_studio(
         raise HTTPException(status_code=404, detail="Utilisateur non membre")
     db.delete(membership)
     db.commit()
+    try:
+        record_audit_log(
+            db,
+            "user_remove",
+            user_id=(
+                uuid.UUID(payload.get("sub")) if payload.get("sub") else None
+            ),
+            user_email=payload.get("email"),
+            studio_id=studio_id,
+            details={"target_user_id": str(user_id)},
+        )
+    except Exception:
+        pass
     return {"status": "removed", "user_id": str(user_id), "studio_id": str(studio_id)}
 
 @router.get("/{studio_id}/invitations", response_model=List[dict])
@@ -299,3 +347,82 @@ def list_invitations(
         }
         for inv in invitations
     ]
+
+class StudioSecuritySettingsIn(BaseModel):
+    watermark_enabled: Optional[bool] = None
+    encryption_at_rest_enabled: Optional[bool] = None
+    encryption_in_transit_enabled: Optional[bool] = None
+    auto_purge_enabled: Optional[bool] = None
+    retention_days: Optional[int] = None
+
+
+@router.get("/{studio_id}/security")
+def get_studio_security_settings(
+    studio_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    studio = db.query(Studio).filter(Studio.id == studio_id).first()
+    if not studio:
+        raise HTTPException(status_code=404, detail="Studio non trouvé")
+    settings = getattr(studio, "security_settings", None) or {}
+    return {
+        "studio_id": str(studio.id),
+        "watermark_enabled": settings.get("watermark_enabled", True),
+        "encryption_at_rest_enabled": settings.get(
+            "encryption_at_rest_enabled", True
+        ),
+        "encryption_in_transit_enabled": settings.get(
+            "encryption_in_transit_enabled", True
+        ),
+        "auto_purge_enabled": settings.get("auto_purge_enabled", True),
+        "retention_days": int(settings.get("retention_days", 30)),
+    }
+
+
+@router.patch("/{studio_id}/security")
+@router.put("/{studio_id}/security")
+def update_studio_security_settings(
+    studio_id: uuid.UUID,
+    data: StudioSecuritySettingsIn,
+    db: Session = Depends(get_db),
+):
+    studio = db.query(Studio).filter(Studio.id == studio_id).first()
+    if not studio:
+        raise HTTPException(status_code=404, detail="Studio non trouvé")
+
+    current = dict(getattr(studio, "security_settings", None) or {})
+    default_settings = {
+        "watermark_enabled": True,
+        "encryption_at_rest_enabled": True,
+        "encryption_in_transit_enabled": True,
+        "auto_purge_enabled": True,
+        "retention_days": 30,
+    }
+    for k, v in default_settings.items():
+        if k not in current:
+            current[k] = v
+
+    if data.watermark_enabled is not None:
+        current["watermark_enabled"] = bool(data.watermark_enabled)
+    if data.encryption_at_rest_enabled is not None:
+        current["encryption_at_rest_enabled"] = bool(
+            data.encryption_at_rest_enabled
+        )
+    if data.encryption_in_transit_enabled is not None:
+        current["encryption_in_transit_enabled"] = bool(
+            data.encryption_in_transit_enabled
+        )
+    if data.auto_purge_enabled is not None:
+        current["auto_purge_enabled"] = bool(data.auto_purge_enabled)
+    if data.retention_days is not None:
+        current["retention_days"] = max(1, int(data.retention_days))
+
+    studio.security_settings = current
+    db.commit()
+    db.refresh(studio)
+
+    return {
+        "studio_id": str(studio.id),
+        "status": "updated",
+        **current,
+    }

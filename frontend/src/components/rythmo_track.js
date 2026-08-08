@@ -60,6 +60,21 @@ export const TYPO_LABELS = {
   parentheses: 'Parenthèses (jeu)',
 };
 
+export function renderSpeechRateBadge(speechRate, alert) {
+  if (!speechRate || speechRate <= 0) return '';
+  if (alert && alert.is_alert) {
+    const isFast = alert.alert_type === 'too_fast';
+    const colorClass = isFast
+      ? 'speech-rate-badge--fast'
+      : 'speech-rate-badge--slow';
+    const icon = isFast ? '⚡' : '🐢';
+    return `<span class="speech-rate-badge ${colorClass}" title="${
+      alert.alert_message || ''
+    }">${icon} ${speechRate} syll/s (ALERTE)</span>`;
+  }
+  return `<span class="speech-rate-badge speech-rate-badge--normal">${speechRate} syll/s</span>`;
+}
+
 class RythmoTrack extends HTMLElement {
   constructor() {
     super();

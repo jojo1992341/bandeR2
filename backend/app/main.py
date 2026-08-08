@@ -1,5 +1,26 @@
-from fastapi import FastAPI
-from app.api.v1 import auth, users, projects, studios, transcripts, rythmo, exports
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from app.api.v1 import (
+    auth,
+    users,
+    projects,
+    studios,
+    transcripts,
+    rythmo,
+    exports,
+    media,
+    pipeline_ws,
+    speakers,
+    replicas,
+    comments,
+    replica_lock_ws,
+    project_lifecycle,
+    dashboard,
+    audit,
+    backups,
+    silences,
+    speech_rate,
+)
 from app.core.config import get_settings
 from app.core.logging import logger
 
@@ -7,9 +28,35 @@ settings = get_settings()
 
 app = FastAPI(
     title="RythmoAI Backend",
-    description="FastAPI backend per CDC RythmoAI v2 §6.2 (Clean Architecture)",
+    description="FastAPI backend per CDC RythmoAI v2 §6.2 (Clean Architecture) & §15.4-15.5 Security/Audit",
     version="2.0.0",
 )
+
+
+@app.middleware("http")
+async def security_transport_headers(request: Request, call_next):
+    # Support TLS 1.3 obligatoire & HSTS activé (§15.4) & OWASP Security Headers (§15.7)
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = (
+        "max-age=31536000; includeSubDomains; preload"
+    )
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; frame-ancestors 'none';"
+    )
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    ssl_proto = (
+        request.headers.get("x-ssl-protocol")
+        or request.headers.get("x-forwarded-ssl-version")
+        or ""
+    )
+    if ssl_proto and "TLSv1.3" not in ssl_proto and "TLSv1.2" in ssl_proto:
+        return JSONResponse(
+            status_code=426,
+            content={"detail": "TLS 1.3 obligatoire en transit (§15.4)"},
+        )
+    return response
 
 
 @app.get("/health")
@@ -28,12 +75,19 @@ app.include_router(
 )
 app.include_router(rythmo.router, prefix="/api/v1", tags=["rythmo"])
 app.include_router(exports.router, prefix="/api/v1", tags=["exports"])
-from app.api.v1 import media, pipeline_ws, speakers, replicas, comments, replica_lock_ws, project_lifecycle, dashboard
+app.include_router(exports.router, tags=["exports-alt"])
 app.include_router(media.router, tags=["media"])
+app.include_router(media.router, prefix="/api/v1", tags=["media-api"])
 app.include_router(pipeline_ws.router, tags=["pipeline"])
 app.include_router(speakers.router, tags=["speakers"])
 app.include_router(replicas.router, prefix="/api/v1", tags=["replicas"])
 app.include_router(replica_lock_ws.router, prefix="/api/v1", tags=["replica-locks"])
-app.include_router(project_lifecycle.router, prefix="/api/v1", tags=["project-lifecycle"])
+app.include_router(
+    project_lifecycle.router, prefix="/api/v1", tags=["project-lifecycle"]
+)
 app.include_router(dashboard.router, prefix="/api/v1", tags=["dashboard"])
 app.include_router(comments.router, prefix="/api/v1", tags=["comments"])
+app.include_router(audit.router, tags=["audit"])
+app.include_router(backups.router, tags=["backups"])
+app.include_router(silences.router, tags=["silences"])
+app.include_router(speech_rate.router, tags=["speech-rate"])
