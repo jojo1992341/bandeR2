@@ -1,7 +1,8 @@
 /**
- * ExportsPanel — Export PDF calligraphié + SRT/VTT étendu §A.2, §17.1
+ * ExportsPanel — Export PDF calligraphié + SRT/VTT étendu + Journal qualité §A.2, §17.1, §12.4
  * Génération asynchrone <15s et téléchargement via GET /exports/{id}/download
  * SRT/VTT : texte horodaté, locuteur en commentaire, styles basiques
+ * Qualité : rapport PDF de synthèse (scores de confiance, zones à faible confiance)
  */
 
 import { api } from '../services/api.js';
@@ -49,16 +50,18 @@ export class ExportsPanel {
       </style>
       <div class="exports-panel">
         <h2>Exports — Annexe A.2</h2>
-        <p style="opacity:0.8; font-size:0.85rem;">PDF calligraphié + SRT/VTT étendu (texte horodaté, locuteur en commentaire, styles basiques). Génération asynchrone &lt;15s §17.1</p>
+        <p style="opacity:0.8; font-size:0.85rem;">PDF calligraphié + SRT/VTT étendu + Journal qualité §12.4. Génération asynchrone &lt;15s §17.1</p>
         <div class="export-actions" data-testid="export-actions">
           <select data-testid="export-format-select">
             <option value="pdf" ${this.lastFormat === 'pdf' ? 'selected' : ''}>PDF calligraphié</option>
             <option value="srt" ${this.lastFormat === 'srt' ? 'selected' : ''}>SRT étendu</option>
             <option value="vtt" ${this.lastFormat === 'vtt' ? 'selected' : ''}>VTT étendu</option>
+            <option value="quality_report" ${this.lastFormat === 'quality_report' ? 'selected' : ''}>Rapport qualité PDF</option>
           </select>
           <button data-testid="export-pdf-btn" ${isGenerating ? 'disabled' : ''}>${isGenerating ? 'Génération en cours…' : 'Exporter'}</button>
           <button data-testid="export-srt-btn" style="background:#3b82f6;" ${isGenerating ? 'disabled' : ''}>SRT</button>
           <button data-testid="export-vtt-btn" style="background:#8b5cf6;" ${isGenerating ? 'disabled' : ''}>VTT</button>
+          <button data-testid="export-quality-btn" style="background:#f59e0b; color:#0b0c15;" ${isGenerating ? 'disabled' : ''}>Rapport qualité</button>
           <button data-testid="export-refresh-btn" style="background:#2a2d3e;">Actualiser</button>
         </div>
         <div class="export-status ${status || 'idle'}" data-testid="export-status" data-status="${status || 'idle'}">
@@ -66,7 +69,7 @@ export class ExportsPanel {
           ${error ? `<div style="color:#ef4444; margin-top:0.25rem;">Erreur: ${error}</div>` : ''}
         </div>
         <div class="export-download" data-testid="export-download" style="margin-top:0.5rem;"></div>
-        <div style="margin-top:0.5rem; font-size:0.75rem; opacity:0.7;">Formats: PDF • SRT • VTT • Timecodes SMPTE 25fps • Codes typo inclus</div>
+        <div style="margin-top:0.5rem; font-size:0.75rem; opacity:0.7;">Formats: PDF • SRT • VTT • Rapport qualité • Timecodes SMPTE 25fps • Codes typo inclus • Audit §12.4</div>
       </div>
     `;
     this._bind();
@@ -76,6 +79,7 @@ export class ExportsPanel {
     const btnPdf = this.container.querySelector('[data-testid="export-pdf-btn"]');
     const btnSrt = this.container.querySelector('[data-testid="export-srt-btn"]');
     const btnVtt = this.container.querySelector('[data-testid="export-vtt-btn"]');
+    const btnQuality = this.container.querySelector('[data-testid="export-quality-btn"]');
     const refreshBtn = this.container.querySelector('[data-testid="export-refresh-btn"]');
     const select = this.container.querySelector('[data-testid="export-format-select"]');
     if (select) {
@@ -91,6 +95,9 @@ export class ExportsPanel {
     }
     if (btnVtt) {
       btnVtt.addEventListener('click', () => this.createExport('vtt'));
+    }
+    if (btnQuality) {
+      btnQuality.addEventListener('click', () => this.createExport('quality_report'));
     }
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => this.checkStatus());
@@ -158,9 +165,7 @@ export class ExportsPanel {
     const dlContainer = this.container.querySelector('[data-testid="export-download"]');
     if (!dlContainer) return;
     const fmt = exportData.format || this.lastFormat || 'pdf';
-    const ext = fmt.toLowerCase();
-    const isPdf = ext === 'pdf';
-    const filename = `bande_rythmo_${exportData.id}.${ext}`;
+    const ext = fmt.toLowerCase() === 'quality_report' ? 'pdf' : fmt.toLowerCase();
     dlContainer.innerHTML = `
       <a href="/api/v1/exports/${exportData.id}/download" data-testid="download-link" download>Télécharger le ${ext.toUpperCase()}</a>
       <span style="margin-left:0.5rem; opacity:0.7;">(${exportData.id.slice(0,8)}… • ${ext.toUpperCase()})</span>
@@ -174,7 +179,7 @@ export class ExportsPanel {
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = filename;
+          a.download = `bande_rythmo_${exportData.id}.${ext}`;
           a.click();
           URL.revokeObjectURL(url);
         } catch (e) {

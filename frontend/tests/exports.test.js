@@ -40,6 +40,7 @@ describe('ExportsPanel PDF calligraphié §A.2 / §17.1', () => {
     expect(container.querySelector('[data-testid="export-pdf-btn"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="export-srt-btn"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="export-vtt-btn"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="export-quality-btn"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="export-status"]')).not.toBeNull();
   });
 
@@ -82,5 +83,17 @@ describe('ExportsPanel PDF calligraphié §A.2 / §17.1', () => {
 
   it('expose le web component rythmo-exports', () => {
     expect(customElements.get('rythmo-exports')).toBeDefined();
+  });
+
+  it('crée un export rapport qualité et poll le statut', async () => {
+    const panel = new ExportsPanel('test-exports', projectId);
+    panel.mount();
+    const btn = container.querySelector('[data-testid="export-quality-btn"]');
+    expect(btn).not.toBeNull();
+    btn.click();
+    await new Promise(r => setTimeout(r, 0));
+    expect(api.createExport).toHaveBeenCalledWith(projectId, 'quality_report');
+    await new Promise(r => setTimeout(r, 600));
+    expect(api.getExport).toHaveBeenCalled();
   });
 });
