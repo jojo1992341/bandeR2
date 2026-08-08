@@ -24,7 +24,7 @@ app.include_router(studios.router, prefix="/api/v1/studios", tags=["studios"])
 app.include_router(
     transcripts.router, prefix="/api/v1/transcripts", tags=["transcripts"]
 )
-app.include_router(rythmo.router, prefix="/api/v1/rythmo", tags=["rythmo"])
+app.include_router(rythmo.router, prefix="/api/v1", tags=["rythmo"])
 app.include_router(exports.router, prefix="/api/v1/exports", tags=["exports"])
 from app.api.v1 import media, pipeline_ws, speakers, replicas
 app.include_router(media.router, tags=["media"])

@@ -10,3 +10,4 @@ from .word import Word
 from .speaker import Speaker
 from .replica import Replica
 from .replica_history import ReplicaHistory
+from .rythmo_version import RythmoVersion

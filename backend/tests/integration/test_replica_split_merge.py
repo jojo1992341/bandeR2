@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.core.database import get_db
-from app.models import Base, Studio, Project, MediaAsset, Replica
+from app.models import Base, Studio, Project, MediaAsset, Replica, RythmoVersion
 
 # Utiliser SQLite in-memory pour l'intégration sans dépendance Postgres
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -34,6 +34,10 @@ client = TestClient(app)
 
 def _clean_db(db):
     # Supprimer dans l'ordre pour respecter FK
+    try:
+        db.query(RythmoVersion).delete()
+    except:
+        pass
     db.query(Replica).delete()
     db.query(MediaAsset).delete()
     db.query(Project).delete()
