@@ -138,15 +138,75 @@ def pipeline_transcribe_diarize(self, pipeline_result: dict):
     bind=True, max_retries=2, default_retry_delay=15, autoretry_for=(Exception,)
 )
 def pipeline_generate_rythmo(self, pipeline_result: dict):
-    # Étape 3 : génération bande rythmo
+    # Étape 3 : génération bande rythmo §8.3 avec profils typographiques §2.4
     try:
         if generate_rythmo_band is not None:
-            result = generate_rythmo_band.run(project_id=pipeline_result.get("media_id"))
+            # Passer le profil si disponible
+            kwargs = {}
+            if pipeline_result.get("typographic_profile_id"):
+                kwargs["typographic_profile_id"] = pipeline_result.get("typographic_profile_id")
+            result = generate_rythmo_band.run(project_id=pipeline_result.get("media_id"), **kwargs)
+            # Si le stub retourne fallback, tenter génération réelle via RythmoEngine + profil
+            if isinstance(result, dict) and result.get("status") == "fallback":
+                raise RuntimeError("fallback trigger real generation")
         else:
-            result = {"task": "generate_rythmo_band", "status": "fallback"}
+            raise RuntimeError("generate_rythmo_band not available")
     except Exception as e:
-        logger.warning(f"generate_rythmo_band fallback: {e}")
-        result = {"task": "generate_rythmo_band", "status": "fallback_error", "error": str(e)}
+        logger.info(f"pipeline_generate_rythmo: tentative génération via RythmoEngine avec profil: {e}")
+        try:
+            import uuid
+            from app.core.database import SessionLocal
+            from app.models import Project, MediaAsset, Replica, Word, TranscriptSegment
+            from app.services.typographic_profile_service import TypographicProfileService
+            from app.services.rythmo_engine import RythmoEngine
+            db = SessionLocal()
+            try:
+                media_id_val = pipeline_result.get("media_id")
+                project_id_val = pipeline_result.get("project_id")
+                # Déduire project/media
+                media = None
+                project = None
+                if media_id_val:
+                    try:
+                        media = db.query(MediaAsset).filter(MediaAsset.id == uuid.UUID(str(media_id_val))).first()
+                        if media:
+                            project = db.query(Project).filter(Project.id == media.project_id).first()
+                    except: pass
+                if not project and project_id_val:
+                    try:
+                        project = db.query(Project).filter(Project.id == uuid.UUID(str(project_id_val))).first()
+                    except: pass
+                effective_profile = None
+                if project:
+                    svc = TypographicProfileService(db)
+                    typ_profile_id = pipeline_result.get("typographic_profile_id")
+                    if typ_profile_id:
+                        try:
+                            effective_profile = svc.get_effective_profile(project.studio_id, uuid.UUID(str(typ_profile_id)))
+                        except: effective_profile = svc.get_effective_profile(project.studio_id, None)
+                    else:
+                        effective_profile = svc.get_effective_profile(project.studio_id, None)
+                engine = RythmoEngine(profile=effective_profile)
+                # Charger les mots si media disponible
+                if media:
+                    words = db.query(Word).filter(Word.segment_id.in_(db.query(TranscriptSegment.id).filter(TranscriptSegment.media_id == media.id))).order_by(Word.start_ms).all()
+                    word_dicts = [{"text": w.text, "start_ms": w.start_ms, "end_ms": w.end_ms, "speaker_id": w.speaker_id} for w in words]
+                    if not word_dicts:
+                        word_dicts = [{"text": "...", "start_ms": 0, "end_ms": 1000, "speaker_id": None}]
+                    replicas = engine.segment_words(word_dicts)
+                    for r in replicas:
+                        typo = r.get("typo_codes") or {}
+                        rep = Replica(id=uuid.uuid4(), media_id=media.id, text=r["text"], start_ms=r["start_ms"], end_ms=r["end_ms"], speaker_id=r.get("speaker_id"), confidence_score=0.85, is_manually_edited=False, breath_marker=r.get("has_breath_marker", False), order_index=len(db.query(Replica).filter(Replica.media_id == media.id).all()), typo_codes=typo)
+                        db.add(rep)
+                    db.commit()
+                    result = {"task": "generate_rythmo_band", "status": "generated_via_engine", "replica_count": len(replicas), "profile": effective_profile}
+                else:
+                    result = {"task": "generate_rythmo_band", "status": "fallback_no_media"}
+            finally:
+                db.close()
+        except Exception as inner:
+            logger.warning(f"RythmoEngine fallback failed: {inner}")
+            result = {"task": "generate_rythmo_band", "status": "fallback_error", "error": str(inner)}
     # §8.2.5 — Détection d'émotions / intentions après génération Rythmo
     # Double analyse acoustique + textuelle → EmotionTag, indicatif uniquement
     try:

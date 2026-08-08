@@ -13,6 +13,9 @@ router = APIRouter()
 
 class RythmoGenerateIn(BaseModel):
     media_id: uuid.UUID
+    typographic_profile_id: Optional[uuid.UUID] = None
+    # Alternative : passer directement le nom du profil
+    typographic_profile_name: Optional[str] = None
 
 class VersionCreateIn(BaseModel):
     comment: Optional[str] = None
@@ -57,7 +60,30 @@ def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session =
     media = db.query(MediaAsset).filter(MediaAsset.id == data.media_id, MediaAsset.project_id == project_id).first()
     if not media:
         raise HTTPException(status_code=404, detail="Média non trouvé pour ce projet")
-    engine = RythmoEngine()
+    project = db.query(Project).filter(Project.id == project_id).first()
+    # §2.4 / §16.3 : récupérer le profil typographique effectif du studio
+    from app.services.typographic_profile_service import TypographicProfileService
+    profile_svc = TypographicProfileService(db)
+    effective_profile = None
+    try:
+        # Si un profile_id est passé explicitement, l'utiliser
+        if data.typographic_profile_id:
+            effective_profile = profile_svc.get_effective_profile(project.studio_id, data.typographic_profile_id)
+        elif data.typographic_profile_name:
+            # Chercher par nom
+            from app.models import TypographicProfile
+            prof = db.query(TypographicProfile).filter(TypographicProfile.studio_id == project.studio_id, TypographicProfile.name == data.typographic_profile_name).first()
+            if prof:
+                effective_profile = profile_svc.get_effective_profile(project.studio_id, prof.id)
+            else:
+                effective_profile = profile_svc.get_effective_profile(project.studio_id, None)
+        else:
+            effective_profile = profile_svc.get_effective_profile(project.studio_id, None)
+    except Exception as e:
+        import logging
+        logging.getLogger("rythmoai").warning(f"Profil typographique fallback défaut: {e}")
+        effective_profile = {"codes": {}, "thresholds": {}, "name": "default"}
+    engine = RythmoEngine(profile=effective_profile)
     from app.models import Word, TranscriptSegment
     words = db.query(Word).filter(Word.segment_id.in_(
         db.query(TranscriptSegment.id).filter(TranscriptSegment.media_id == media.id).subquery()
@@ -68,6 +94,9 @@ def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session =
     replicas = engine.segment_words(word_dicts)
     created_replicas = []
     for r in replicas:
+        typo = r.get("typo_codes") or {}
+        # Si le profil définit des codes, ils sont appliqués automatiquement à la génération
+        # Sinon typo reste vide (ou selon heuristique)
         rep = Replica(
             id=uuid.uuid4(),
             media_id=media.id,
@@ -79,6 +108,7 @@ def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session =
             is_manually_edited=False,
             breath_marker=r.get("has_breath_marker", False),
             order_index=len(db.query(Replica).filter(Replica.media_id == media.id).all()) + len(created_replicas),
+            typo_codes=typo,
         )
         db.add(rep)
         created_replicas.append(rep)
@@ -99,7 +129,7 @@ def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session =
         import logging
         logging.getLogger("rythmoai").warning(f"Emotion detection après génération rythmo warning (non-bloquant): {e}")
         emotion_result = {"status": "warning", "error": str(e)}
-    return {"project_id": str(project_id), "replica_count": len(replicas), "status": "Prêt pour édition", "emotion_detection": emotion_result}
+    return {"project_id": str(project_id), "replica_count": len(replicas), "status": "Prêt pour édition", "emotion_detection": emotion_result, "typographic_profile": {"id": effective_profile.get("id"), "name": effective_profile.get("name"), "codes": effective_profile.get("codes"), "thresholds": effective_profile.get("thresholds")} if effective_profile else None}
 
 @router.get("/projects/{project_id}/replicas", response_model=list)
 def list_replicas(project_id: uuid.UUID, db: Session = Depends(get_db)):

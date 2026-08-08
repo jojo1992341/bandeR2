@@ -303,4 +303,66 @@ export const api = {
     if (!res.ok) throw new Error(`getReplicasWithEmotions failed ${res.status}: ${await res.text()}`);
     return res.json();
   },
+
+  // ==================== Typographic Profiles §2.4 / §10.2 / §16.3 ====================
+
+  async getTypographicProfiles(studioId) {
+    const res = await fetch(`/api/v1/studios/${studioId}/typographic-profiles`);
+    if (!res.ok) throw new Error(`getTypographicProfiles failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async createTypographicProfile(studioId, profile) {
+    const res = await fetch(`/api/v1/studios/${studioId}/typographic-profiles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
+    });
+    if (!res.ok) throw new Error(`createTypographicProfile failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async patchTypographicProfiles(studioId, patch) {
+    const res = await fetch(`/api/v1/studios/${studioId}/typographic-profiles`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(`patchTypographicProfiles failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async getTypographicProfile(studioId, profileId) {
+    const res = await fetch(`/api/v1/studios/${studioId}/typographic-profiles/${profileId}`);
+    if (!res.ok) throw new Error(`getTypographicProfile failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async patchTypographicProfile(studioId, profileId, patch) {
+    const res = await fetch(`/api/v1/studios/${studioId}/typographic-profiles/${profileId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(`patchTypographicProfile failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async deleteTypographicProfile(studioId, profileId) {
+    const res = await fetch(`/api/v1/studios/${studioId}/typographic-profiles/${profileId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`deleteTypographicProfile failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async generateRythmo(projectId, mediaId, typographicProfileId = null) {
+    const body = { media_id: mediaId };
+    if (typographicProfileId) body.typographic_profile_id = typographicProfileId;
+    const res = await fetch(`/api/v1/projects/${projectId}/rythmo/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`generateRythmo failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
 };

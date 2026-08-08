@@ -21,6 +21,7 @@ from app.api.v1 import (
     silences,
     speech_rate,
     emotions,
+    typographic_profiles,
 )
 from app.core.config import get_settings
 from app.core.logging import logger
@@ -93,3 +94,4 @@ app.include_router(backups.router, tags=["backups"])
 app.include_router(silences.router, tags=["silences"])
 app.include_router(speech_rate.router, tags=["speech-rate"])
 app.include_router(emotions.router, tags=["emotions"])
+app.include_router(typographic_profiles.router, tags=["typographic-profiles"])
