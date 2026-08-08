@@ -17,6 +17,14 @@ npm_audit:
     - cd frontend && npm ci
     - npm audit --audit-level=high || true
 
+performance_budgets_and_slos:
+  stage: security_and_test
+  image: python:3.13
+  script:
+    - pip install -r backend/requirements.txt pytest pytest-asyncio httpx pyotp requests
+    - python3 ci/check_performance_budgets.py
+    - PYTHONPATH=backend pytest backend/tests/integration/test_performance_slo_budget.py -v
+
 owasp_and_integration_tests:
   stage: security_and_test
   image: python:3.13
