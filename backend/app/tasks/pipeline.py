@@ -55,6 +55,12 @@ try:
 except ImportError:
     extract_audio = None
 
+# §8.2.6 Lip sync — import optionnel pour éviter crash si dépendances manquantes
+try:
+    from app.tasks.lip_sync import detect_lip_sync
+except ImportError:
+    detect_lip_sync = None
+
 logger = logging.getLogger("rythmoai")
 
 
@@ -134,6 +140,67 @@ def pipeline_transcribe_diarize(self, pipeline_result: dict):
     }
 
 
+
+@celery_app.task(
+    bind=True, max_retries=2, default_retry_delay=10, autoretry_for=(Exception,)
+)
+def pipeline_detect_lip_sync(self, pipeline_result: dict):
+    """Étape §8.2.6 / §11.4 — Détection repères faciaux FaceMesh → courbe labiale
+    Activée via feature flag §19.3 (FEATURE_LIP_SYNC). Si désactivée, skip gracieusement.
+    """
+    import uuid
+    from app.core.config import get_settings
+    settings = get_settings()
+    # Vérifier feature flag
+    import os
+    flag_env = os.getenv("FEATURE_LIP_SYNC", os.getenv("FEATURE_FLAG_LIP_SYNC", os.getenv("ENABLE_LIP_SYNC", ""))).lower() in ("1", "true", "yes", "on")
+    flag = settings.FEATURE_LIP_SYNC_ENABLED or settings.LIP_SYNC_ENABLED or flag_env or settings.is_feature_enabled("lip_sync")
+    if not flag:
+        logger.info("Lip sync feature flag désactivé — skip")
+        pipeline_result["lip_sync"] = {"status": "skipped", "reason": "feature_flag_disabled"}
+        return pipeline_result
+    # Tenter détection
+    try:
+        media_id = pipeline_result.get("media_id")
+        media_path = pipeline_result.get("media_path")
+        # Si detect_lip_sync disponible (celery task), l'utiliser
+        if detect_lip_sync is not None:
+            try:
+                res = detect_lip_sync.run(media_id=str(media_id), video_path=media_path)
+                pipeline_result["lip_sync"] = res
+                logger.info(f"Lip sync détecté via Celery: {res}")
+                return pipeline_result
+            except Exception as e:
+                logger.warning(f"detect_lip_sync.run échoué, fallback service direct: {e}")
+        # Fallback direct via service
+        from app.core.database import SessionLocal
+        from app.services.lip_sync_service import LipSyncService
+        db = SessionLocal()
+        try:
+            if media_id:
+                svc = LipSyncService(db)
+                # Déterminer le chemin vidéo (media_path ou storage_path)
+                video_path = media_path
+                if not video_path or not os.path.exists(video_path):
+                    # Essayer de récupérer depuis MediaAsset
+                    try:
+                        from app.models import MediaAsset
+                        m = db.query(MediaAsset).filter(MediaAsset.id == uuid.UUID(str(media_id))).first()
+                        if m and m.storage_path and os.path.exists(m.storage_path):
+                            video_path = m.storage_path
+                    except:
+                        pass
+                res = svc.detect_and_persist(uuid.UUID(str(media_id)), video_path or media_path or "")
+                pipeline_result["lip_sync"] = res
+                return pipeline_result
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"Lip sync detection warning (non-bloquant): {e}")
+        pipeline_result["lip_sync"] = {"status": "warning", "error": str(e)}
+        return pipeline_result
+    return pipeline_result
+
 @celery_app.task(
     bind=True, max_retries=2, default_retry_delay=15, autoretry_for=(Exception,)
 )
@@ -207,6 +274,66 @@ def pipeline_generate_rythmo(self, pipeline_result: dict):
         except Exception as inner:
             logger.warning(f"RythmoEngine fallback failed: {inner}")
             result = {"task": "generate_rythmo_band", "status": "fallback_error", "error": str(inner)}
+    # §8.2.6 / §11.4 — Raffinement labial sur gros plans (feature flag §19.3)
+    # Si lip_sync a été détecté, on raffine les répliques générées
+    try:
+        lip_data = pipeline_result.get("lip_sync")
+        # Si lip_sync n'a pas été exécuté en tant qu'étape séparée, tenter de le récupérer depuis la DB
+        if not lip_data or lip_data.get("status") in ("skipped", "empty"):
+            # Essayer de charger depuis DB si feature activée
+            import uuid as _uuid
+            from app.core.database import SessionLocal as _SessionLocal
+            from app.services.lip_sync_service import LipSyncService as _LipService
+            from app.core.config import get_settings as _get_settings
+            import os as _os
+            _settings = _get_settings()
+            _flag = _settings.FEATURE_LIP_SYNC_ENABLED or _settings.LIP_SYNC_ENABLED or _os.getenv("FEATURE_LIP_SYNC","").lower() in ("1","true","yes","on") or _settings.is_feature_enabled("lip_sync")
+            if _flag:
+                _db = _SessionLocal()
+                try:
+                    _media_id = pipeline_result.get("media_id")
+                    if _media_id:
+                        _svc = _LipService(_db)
+                        _curve = _svc.get_curve(_uuid.UUID(str(_media_id)))
+                        if _curve:
+                            lip_data = {"curve": _curve, "status": "ok", "face_visible_ratio": sum(1 for c in _curve if c.get("face_visible"))/len(_curve) if _curve else 0}
+                            pipeline_result["lip_sync"] = lip_data
+                finally:
+                    _db.close()
+        if lip_data and lip_data.get("status") == "ok" and lip_data.get("curve"):
+            import uuid as _uuid2
+            from app.core.database import SessionLocal as _SessionLocal2
+            from app.models import Replica as _Replica
+            _db2 = _SessionLocal2()
+            try:
+                _media_id2 = pipeline_result.get("media_id")
+                if _media_id2:
+                    replicas_db = _db2.query(_Replica).filter(_Replica.media_id == _uuid2.UUID(str(_media_id2))).order_by(_Replica.order_index, _Replica.start_ms).all()
+                    if replicas_db:
+                        from app.services.lip_sync_service import LipSyncService as _LipSvc2
+                        _svc2 = _LipSvc2(_db2)
+                        # Convertir répliques DB en dict pour raffinement
+                        rep_dicts = [{"id": str(r.id), "text": r.text, "start_ms": r.start_ms, "end_ms": r.end_ms, "speaker_id": str(r.speaker_id) if r.speaker_id else None} for r in replicas_db]
+                        refined, metrics = _svc2.refine_replicas(rep_dicts, _uuid2.UUID(str(_media_id2)))
+                        # Appliquer les ajustements en DB
+                        for orig, ref in zip(replicas_db, refined):
+                            if ref["start_ms"] != orig.start_ms or ref["end_ms"] != orig.end_ms:
+                                orig.start_ms = ref["start_ms"]
+                                orig.end_ms = ref["end_ms"]
+                        _db2.commit()
+                        pipeline_result["lip_sync_refinement"] = metrics
+                        logger.info(f"Lip sync raffinement: {metrics}")
+                    else:
+                        pipeline_result["lip_sync_refinement"] = {"status": "no_replicas"}
+                else:
+                    pipeline_result["lip_sync_refinement"] = {"status": "no_media"}
+            finally:
+                _db2.close()
+        else:
+            pipeline_result["lip_sync_refinement"] = {"status": "skipped", "reason": lip_data.get("reason") if lip_data else "no_curve"}
+    except Exception as e:
+        logger.warning(f"Lip sync refinement warning (non-bloquant): {e}")
+        pipeline_result["lip_sync_refinement"] = {"status": "warning", "error": str(e)}
     # §8.2.5 — Détection d'émotions / intentions après génération Rythmo
     # Double analyse acoustique + textuelle → EmotionTag, indicatif uniquement
     try:

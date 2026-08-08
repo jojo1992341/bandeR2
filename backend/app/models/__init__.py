@@ -19,3 +19,4 @@ from .security_alert import SecurityAlert
 from .silence_event import SilenceEvent
 from .emotion_tag import EmotionTag
 from .typographic_profile import TypographicProfile
+from .lip_sync import LipSyncFrame, LipSyncResult

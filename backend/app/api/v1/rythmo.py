@@ -113,6 +113,62 @@ def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session =
         db.add(rep)
         created_replicas.append(rep)
     db.commit()
+    # §8.2.6 / §11.4 — Synchronisation labiale via FaceMesh (feature flag §19.3)
+    lip_sync_result = None
+    lip_refinement_metrics = None
+    try:
+        from app.core.config import get_settings
+        import os
+        settings = get_settings()
+        flag = settings.FEATURE_LIP_SYNC_ENABLED or settings.LIP_SYNC_ENABLED or os.getenv("FEATURE_LIP_SYNC", "").lower() in ("1", "true", "yes", "on") or settings.is_feature_enabled("lip_sync")
+        if flag:
+            from app.services.lip_sync_service import LipSyncService
+            # Détection si courbe non existante : tenter de détecter à partir du média
+            lip_svc = LipSyncService(db)
+            # Vérifier si une courbe existe déjà, sinon tenter détection (fallback synthétique si vidéo absente)
+            existing_curve = lip_svc.get_curve(media.id)
+            if not existing_curve:
+                # Détection : utilise storage_path comme chemin vidéo
+                try:
+                    lip_sync_result = lip_svc.detect_and_persist(media.id, media.storage_path or "")
+                except Exception as inner:
+                    import logging
+                    logging.getLogger("rythmoai").warning(f"Lip sync detection fallback: {inner}")
+                    lip_sync_result = {"status": "warning", "error": str(inner)}
+            else:
+                lip_sync_result = {"status": "ok", "frame_count": len(existing_curve), "face_visible_ratio": sum(1 for c in existing_curve if c.get("face_visible"))/len(existing_curve) if existing_curve else 0, "feature_enabled": True}
+            # Raffinement des crochets si courbe disponible et gros plan
+            if lip_sync_result and lip_sync_result.get("status") == "ok":
+                # Recharger les répliques créées avec leur lip_sync refinement
+                curve = lip_svc.get_curve(media.id)
+                if curve:
+                    # Utiliser le moteur pour raffiner
+                    from app.services.rythmo_engine import RythmoEngine as _Engine
+                    # On récupère les répliques en dict
+                    rep_dicts = [{"id": str(r.id), "text": r.text, "start_ms": r.start_ms, "end_ms": r.end_ms, "speaker_id": str(r.speaker_id) if r.speaker_id else None} for r in created_replicas]
+                    # Le flag est déjà vérifié, on raffine
+                    engine_lip = _Engine(profile=effective_profile)
+                    refined, metrics = engine_lip.refine_with_lip_sync(rep_dicts, curve, feature_enabled=True)
+                    lip_refinement_metrics = metrics
+                    # Appliquer les ajustements en DB
+                    for orig, ref in zip(created_replicas, refined):
+                        if ref["start_ms"] != orig.start_ms or ref["end_ms"] != orig.end_ms:
+                            orig.start_ms = ref["start_ms"]
+                            orig.end_ms = ref["end_ms"]
+                    db.commit()
+                    for r in created_replicas:
+                        db.refresh(r)
+                    lip_sync_result["refinement"] = metrics
+                else:
+                    lip_sync_result["refinement"] = {"status": "no_curve"}
+            else:
+                lip_sync_result = lip_sync_result or {"status": "skipped", "feature_enabled": True}
+        else:
+            lip_sync_result = {"status": "skipped", "feature_enabled": False, "reason": "feature_flag_disabled"}
+    except Exception as e:
+        import logging
+        logging.getLogger("rythmoai").warning(f"Lip sync pipeline warning (non-bloquant): {e}")
+        lip_sync_result = {"status": "warning", "error": str(e)}
     # §8.2.5 — Double analyse acoustique + textuelle → EmotionTag (indicatif, ne modifie jamais le texte)
     emotion_result = None
     try:
@@ -129,7 +185,7 @@ def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session =
         import logging
         logging.getLogger("rythmoai").warning(f"Emotion detection après génération rythmo warning (non-bloquant): {e}")
         emotion_result = {"status": "warning", "error": str(e)}
-    return {"project_id": str(project_id), "replica_count": len(replicas), "status": "Prêt pour édition", "emotion_detection": emotion_result, "typographic_profile": {"id": effective_profile.get("id"), "name": effective_profile.get("name"), "codes": effective_profile.get("codes"), "thresholds": effective_profile.get("thresholds")} if effective_profile else None}
+    return {"project_id": str(project_id), "replica_count": len(replicas), "status": "Prêt pour édition", "emotion_detection": emotion_result, "lip_sync": lip_sync_result, "typographic_profile": {"id": effective_profile.get("id"), "name": effective_profile.get("name"), "codes": effective_profile.get("codes"), "thresholds": effective_profile.get("thresholds")} if effective_profile else None}
 
 @router.get("/projects/{project_id}/replicas", response_model=list)
 def list_replicas(project_id: uuid.UUID, db: Session = Depends(get_db)):

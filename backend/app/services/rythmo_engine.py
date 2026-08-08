@@ -150,3 +150,126 @@ class RythmoEngine:
         if self.profile_codes:
             replica["typo_codes"] = dict(self.profile_codes)
         return replica
+
+    # ── Synchronisation labiale §8.2.6, §11.4 ────────────────────────────────
+    def refine_with_lip_sync(self, replicas: List[Dict[str, Any]], lip_curve: List[Dict[str, Any]], feature_enabled: bool = True, window_ms: int = 300) -> tuple:
+        """Fiabilise le calage des crochets d'entrée/sortie sur gros plans via courbe d'activité labiale.
+        lip_curve : liste de {timestamp_ms, opening, confidence, face_visible, is_close_up}
+        Si feature_enabled=False ou courbe vide/peu visible, retourne les répliques inchangées.
+        Ne modifie jamais le texte, seulement start/end (crochets).
+        Retourne (replicas_refined, metrics).
+        """
+        if not feature_enabled or not lip_curve or not replicas:
+            return replicas, {"feature_enabled": bool(feature_enabled), "refined_count": 0, "reason": "disabled_or_no_curve" if not feature_enabled or not lip_curve else "no_replicas"}
+
+        # Vérifier visibilité globale
+        visible_ratio = sum(1 for c in lip_curve if c.get("face_visible")) / len(lip_curve) if lip_curve else 0
+        if visible_ratio < 0.15:
+            return replicas, {"feature_enabled": True, "refined_count": 0, "reason": "face_not_visible_enough", "face_visible_ratio": visible_ratio}
+
+        # Déléguer à LipSyncService pour la logique fine (évite duplication)
+        try:
+            from app.services.lip_sync_service import LipSyncService  # lazy
+            # Créer un service factice sans DB pour la logique de raffinement
+            class DummyDB:
+                pass
+            # On instancie le service avec un DB dummy mais on n'utilise que la logique de raffinement
+            # Pour éviter dépendance DB, on recode ici une version légère
+            pass
+        except:
+            pass
+
+        # Logique de raffinement directe (sans DB)
+        refined = []
+        refined_count = 0
+        total_adj = 0
+        for rep in replicas:
+            orig_start = int(rep.get("start_ms", 0))
+            orig_end = int(rep.get("end_ms", 0))
+            # Chercher ouverture près de orig_start
+            new_start = self._find_lip_event(lip_curve, orig_start, window_ms, "opening")
+            new_end = self._find_lip_event(lip_curve, orig_end, window_ms, "closing")
+            if new_start is None:
+                new_start = orig_start
+            if new_end is None:
+                new_end = orig_end
+            # Garder start < end et durée minimale 200ms
+            if new_end <= new_start:
+                new_end = max(new_start + 200, orig_end)
+                if new_end <= new_start:
+                    new_start, new_end = orig_start, orig_end
+            new_rep = dict(rep)
+            # Ne jamais modifier le texte
+            assert new_rep.get("text") == rep.get("text")
+            new_rep["start_ms"] = int(new_start)
+            new_rep["end_ms"] = int(new_end)
+            new_rep["duration_ms"] = int(new_end - new_start)
+            # Marquer le raffinement
+            adj_start = int(new_start - orig_start)
+            adj_end = int(new_end - orig_end)
+            if adj_start != 0 or adj_end != 0:
+                refined_count += 1
+                total_adj += abs(adj_start) + abs(adj_end)
+                new_rep["lip_sync_adjusted"] = True
+                new_rep["lip_sync_adjustment"] = {"start_ms": adj_start, "end_ms": adj_end}
+            else:
+                new_rep["lip_sync_adjusted"] = False
+            refined.append(new_rep)
+
+        metrics = {
+            "feature_enabled": True,
+            "total": len(replicas),
+            "refined_count": refined_count,
+            "total_adjustment_ms": total_adj,
+            "avg_adjustment_ms": (total_adj / refined_count) if refined_count else 0,
+            "face_visible_ratio": visible_ratio,
+            "window_ms": window_ms,
+            "reason": "refined" if refined_count else "no_event_found",
+        }
+        return refined, metrics
+
+    def _find_lip_event(self, curve: List[Dict[str, Any]], target_ms: int, window_ms: int, direction: str) -> Optional[int]:
+        """Trouve l'événement labial le plus proche de target_ms dans window."""
+        if not curve:
+            return None
+        candidates = []
+        for i in range(1, len(curve)):
+            prev = curve[i-1]
+            curr = curve[i]
+            if not curr.get("face_visible") or curr.get("confidence", 0) < 0.3:
+                continue
+            prev_o = prev.get("opening", 0)
+            curr_o = curr.get("opening", 0)
+            if direction == "opening":
+                if prev_o < 0.3 and curr_o > 0.5:
+                    ts = curr.get("timestamp_ms", 0)
+                    if abs(ts - target_ms) <= window_ms:
+                        candidates.append((abs(ts - target_ms), ts))
+            elif direction == "closing":
+                if prev_o > 0.5 and curr_o < 0.3:
+                    ts = curr.get("timestamp_ms", 0)
+                    if abs(ts - target_ms) <= window_ms:
+                        candidates.append((abs(ts - target_ms), ts))
+        if not candidates:
+            return None
+        candidates.sort()
+        return candidates[0][1]
+
+    def segment_words_with_lip_sync(self, words: List[Dict[str, Any]], lip_curve: Optional[List[Dict[str, Any]]] = None, feature_enabled: bool = None) -> List[Dict[str, Any]]:
+        """Segmentation + raffinement labial optionnel (feature flag)."""
+        # Segmentation de base
+        replicas = self.segment_words(words)
+        if lip_curve is None or feature_enabled is False:
+            return replicas
+        # Vérifier feature flag si non explicitement passé
+        if feature_enabled is None:
+            try:
+                from app.core.config import get_settings
+                feature_enabled = get_settings().is_feature_enabled("lip_sync")
+            except:
+                feature_enabled = False
+        if not feature_enabled:
+            return replicas
+        refined, _ = self.refine_with_lip_sync(replicas, lip_curve, feature_enabled=True)
+        return refined
+
