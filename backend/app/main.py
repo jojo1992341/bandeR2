@@ -26,6 +26,7 @@ from app.api.v1 import (
     search,
     feedback,
     words,
+    sso,
 )
 from app.core.config import get_settings
 from app.core.logging import logger
@@ -103,5 +104,7 @@ app.include_router(typographic_profiles.router, tags=["typographic-profiles"])
 app.include_router(lip_sync.router, tags=["lip-sync"])
 app.include_router(search.router, prefix="/api/v1", tags=["search"])
 app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"])
+app.include_router(sso.router, prefix="/api/v1", tags=["sso"])
+app.include_router(sso.router, tags=["sso-alt"])
 app.include_router(words.router, prefix="/api/v1", tags=["words"])
 app.include_router(words.router, tags=["words-alt"])
