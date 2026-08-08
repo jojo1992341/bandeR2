@@ -1,7 +1,9 @@
 /**
- * ExportsPanel — Export PDF calligraphié + SRT/VTT étendu + Journal qualité §A.2, §17.1, §12.4
+ * ExportsPanel — Export PDF calligraphié + SRT/VTT étendu + EBU-STL étendu + Cavena/.rythmo + JSON + Journal qualité §A.2, §17.1, §12.4
  * Génération asynchrone <15s et téléchargement via GET /exports/{id}/download
  * SRT/VTT : texte horodaté, locuteur en commentaire, styles basiques
+ * EBU-STL étendu : GSI 1024 + TTI 128*N, 25fps, conforme ETS 300 706 (rétro-ingénierie docs/retro_engineering_cavena_ebu.md)
+ * Cavena/.rythmo : structure propriétaire reconstituée (magic, timings, typo_flags, texte) — Annexe A.2
  * Qualité : rapport PDF de synthèse (scores de confiance, zones à faible confiance)
  */
 
@@ -50,17 +52,25 @@ export class ExportsPanel {
       </style>
       <div class="exports-panel">
         <h2>Exports — Annexe A.2</h2>
-        <p style="opacity:0.8; font-size:0.85rem;">PDF calligraphié + SRT/VTT étendu + Journal qualité §12.4. Génération asynchrone &lt;15s §17.1</p>
+        <p style="opacity:0.8; font-size:0.85rem;">PDF calligraphié + SRT/VTT étendu + EBU-STL étendu + Cavena/.rythmo + JSON + Journal qualité §12.4. Génération asynchrone &lt;15s §17.1</p>
         <div class="export-actions" data-testid="export-actions">
           <select data-testid="export-format-select">
             <option value="pdf" ${this.lastFormat === 'pdf' ? 'selected' : ''}>PDF calligraphié</option>
             <option value="srt" ${this.lastFormat === 'srt' ? 'selected' : ''}>SRT étendu</option>
             <option value="vtt" ${this.lastFormat === 'vtt' ? 'selected' : ''}>VTT étendu</option>
+            <option value="stl" ${this.lastFormat === 'stl' ? 'selected' : ''}>EBU-STL étendu</option>
+            <option value="cavena" ${this.lastFormat === 'cavena' ? 'selected' : ''}>Cavena (.cav)</option>
+            <option value="rythmo" ${this.lastFormat === 'rythmo' ? 'selected' : ''}>Rythmo (.rythmo)</option>
+            <option value="json" ${this.lastFormat === 'json' ? 'selected' : ''}>JSON structuré</option>
             <option value="quality_report" ${this.lastFormat === 'quality_report' ? 'selected' : ''}>Rapport qualité PDF</option>
           </select>
           <button data-testid="export-pdf-btn" ${isGenerating ? 'disabled' : ''}>${isGenerating ? 'Génération en cours…' : 'Exporter'}</button>
           <button data-testid="export-srt-btn" style="background:#3b82f6;" ${isGenerating ? 'disabled' : ''}>SRT</button>
           <button data-testid="export-vtt-btn" style="background:#8b5cf6;" ${isGenerating ? 'disabled' : ''}>VTT</button>
+          <button data-testid="export-stl-btn" style="background:#06b6d4;" ${isGenerating ? 'disabled' : ''}>EBU-STL</button>
+          <button data-testid="export-cavena-btn" style="background:#6366f1;" ${isGenerating ? 'disabled' : ''}>Cavena</button>
+          <button data-testid="export-rythmo-btn" style="background:#14b8a6;" ${isGenerating ? 'disabled' : ''}>Rythmo</button>
+          <button data-testid="export-json-btn" style="background:#a3a3a3; color:#0b0c15;" ${isGenerating ? 'disabled' : ''}>JSON</button>
           <button data-testid="export-quality-btn" style="background:#f59e0b; color:#0b0c15;" ${isGenerating ? 'disabled' : ''}>Rapport qualité</button>
           <button data-testid="export-refresh-btn" style="background:#2a2d3e;">Actualiser</button>
         </div>
@@ -69,7 +79,7 @@ export class ExportsPanel {
           ${error ? `<div style="color:#ef4444; margin-top:0.25rem;">Erreur: ${error}</div>` : ''}
         </div>
         <div class="export-download" data-testid="export-download" style="margin-top:0.5rem;"></div>
-        <div style="margin-top:0.5rem; font-size:0.75rem; opacity:0.7;">Formats: PDF • SRT • VTT • Rapport qualité • Timecodes SMPTE 25fps • Codes typo inclus • Audit §12.4</div>
+        <div style="margin-top:0.5rem; font-size:0.75rem; opacity:0.7;">Formats: PDF • SRT • VTT • EBU-STL • Cavena • Rythmo • JSON • Rapport qualité • Timecodes SMPTE 25fps • Codes typo inclus • Rétro-ingénierie §4 / Annexe A.2</div>
       </div>
     `;
     this._bind();
@@ -95,6 +105,22 @@ export class ExportsPanel {
     }
     if (btnVtt) {
       btnVtt.addEventListener('click', () => this.createExport('vtt'));
+    }
+    const btnStl = this.container.querySelector('[data-testid="export-stl-btn"]');
+    const btnCavena = this.container.querySelector('[data-testid="export-cavena-btn"]');
+    const btnRythmo = this.container.querySelector('[data-testid="export-rythmo-btn"]');
+    const btnJson = this.container.querySelector('[data-testid="export-json-btn"]');
+    if (btnStl) {
+      btnStl.addEventListener('click', () => this.createExport('stl'));
+    }
+    if (btnCavena) {
+      btnCavena.addEventListener('click', () => this.createExport('cavena'));
+    }
+    if (btnRythmo) {
+      btnRythmo.addEventListener('click', () => this.createExport('rythmo'));
+    }
+    if (btnJson) {
+      btnJson.addEventListener('click', () => this.createExport('json'));
     }
     if (btnQuality) {
       btnQuality.addEventListener('click', () => this.createExport('quality_report'));

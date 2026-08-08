@@ -1,5 +1,7 @@
 import uuid
 import os
+import struct
+import json
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
@@ -109,6 +111,7 @@ def _normalize_format(fmt: str) -> str:
     if not fmt:
         return "pdf"
     f = fmt.lower().strip()
+    # Quality report aliases
     if f in (
         "quality_report",
         "quality",
@@ -126,6 +129,33 @@ def _normalize_format(fmt: str) -> str:
         return "quality_report"
     if "qual" in f or "quality" in f or "rapport" in f or "journal" in f:
         return "quality_report"
+    # EBU-STL aliases (Annexe A.2)
+    low = f.lower().strip().lstrip(".")
+    if low in ("stl", "ebu-stl", "ebu_stl", "ebu-stl-etendu", "ebu_stl_etendu", "ebu-stlextended", "stl_extended", "ebu", "ebu-stl_extended", "stl-etendu"):
+        return "stl"
+    if "ebu" in low and "stl" in low:
+        return "stl"
+    if low == "stl":
+        return "stl"
+    # Cavena aliases
+    if low in ("cavena", "cav", "cavena/lrd", "cavena_lrd", "cavena-rythmo"):
+        return "cavena"
+    if low == "cavena":
+        return "cavena"
+    # .rythmo aliases (proprietary reconstituted)
+    if low in ("rythmo", ".rythmo", "lrd", "rythmoai", "rythmo_ai", "cavena/.rythmo", "cavena_rythmo"):
+        return "rythmo"
+    if low.startswith(".rythmo") or low == "rythmo":
+        return "rythmo"
+    if low.endswith(".rythmo"):
+        return "rythmo"
+    # Handles with dot or slash
+    if low.replace("-", "_").replace(".", "_").replace("/", "_") in ("ebu_stl", "ebu_stl_etendu", "stl_etendu"):
+        return "stl"
+    if low.replace("-", "_").replace(".", "_") in ("cavena", "cav"):
+        return "cavena"
+    if low.replace("-", "_").replace(".", "_") in ("rythmo", "rythmo_ai"):
+        return "rythmo"
     return f
 
 
@@ -936,6 +966,287 @@ def _generate_vtt(project: Project, replicas: list, output_path: Path):
             f.write("\n")
 
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EBU-STL étendu — ETSI EN 300 706 / EBU Tech 3264
+# Rétro-ingénierie documentée : docs/retro_engineering_cavena_ebu.md
+# GSI 1024 bytes + N * TTI 128 bytes (binary, Latin-1, 25fps)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _ms_to_stl_timecode(ms: int, fps: int = 25) -> bytes:
+    """Convertit ms en 4 bytes H:M:S:F pour STL (EBU)."""
+    if ms < 0:
+        ms = 0
+    total_seconds = ms // 1000
+    hours = (total_seconds // 3600) % 100
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    frames = int((ms % 1000) * fps / 1000)
+    if frames >= fps:
+        frames = fps - 1
+    return bytes([hours & 0xFF, minutes & 0xFF, seconds & 0xFF, frames & 0xFF])
+
+def _stl_timecode_to_ms(tc: bytes, fps: int = 25) -> int:
+    if len(tc) < 4:
+        return 0
+    h, m, s, f = tc[0], tc[1], tc[2], tc[3]
+    return ((h * 3600 + m * 60 + s) * 1000) + int(f * 1000 / fps)
+
+def _stl_encode_text(text: str, typo_codes: dict, max_len: int = 112) -> bytes:
+    """Encode le texte en 112 bytes Latin-1 avec contrôles EBU-STL étendu."""
+    if not text:
+        text = ""
+    typo = typo_codes or {}
+    norm = {}
+    for k, v in typo.items():
+        if not v:
+            continue
+        kk = str(k).lower()
+        if kk in ("brackets", "bracket_in", "bracket_out", "crochets"):
+            norm["crochets"] = True
+        elif kk in ("italic", "italique", "voix_off", "off"):
+            norm["italique"] = True
+        elif kk in ("uppercase", "majuscules", "cri", "caps"):
+            norm["majuscules"] = True
+        elif kk in ("parentheses", "parentheses_jeu", "indication_jeu", "jeu"):
+            norm["parentheses"] = True
+    out = text
+    if norm.get("majuscules"):
+        out = out.upper()
+    if norm.get("parentheses"):
+        out = f"({out})"
+    if norm.get("crochets"):
+        out = f"[ {out} ]"
+    prefix = b""
+    suffix = b""
+    if norm.get("italique"):
+        prefix = bytes([0x80, 0x04])
+        suffix = bytes([0x80, 0x05])
+    try:
+        raw = out.encode("latin-1", errors="replace")
+    except:
+        raw = out.encode("utf-8", errors="replace")[:max_len]
+    max_text_len = max_len - len(prefix) - len(suffix)
+    if len(raw) > max_text_len:
+        raw = raw[:max_text_len]
+    tf = prefix + raw + suffix
+    if len(tf) < max_len:
+        tf = tf + bytes([0x8F] * (max_len - len(tf)))
+    else:
+        tf = tf[:max_len]
+    return tf
+
+def _stl_decode_text(tf_bytes: bytes) -> str:
+    """Décode le champ TF 112 bytes (validation)."""
+    cleaned = bytearray()
+    i = 0
+    while i < len(tf_bytes):
+        b = tf_bytes[i]
+        if b == 0x8F or b == 0x00:
+            i += 1
+            continue
+        if b == 0x80 and i + 1 < len(tf_bytes):
+            i += 2
+            continue
+        if b == 0x8A:
+            cleaned.append(ord("\n"))
+            i += 1
+            continue
+        cleaned.append(b)
+        i += 1
+    try:
+        return cleaned.decode("latin-1", errors="ignore").strip()
+    except:
+        return cleaned.decode("utf-8", errors="ignore").strip()
+
+def _generate_stl(project: Project, replicas: list, output_path: Path, fps: int = 25):
+    """Génère un fichier EBU-STL binaire conforme (GSI 1024 + TTI 128*N)."""
+    gsi = bytearray(1024)
+    for i in range(1024):
+        gsi[i] = 0x20
+    gsi[0:3] = b"850"
+    dfc = f"STL{fps:02d}.01".encode("ascii")
+    gsi[3:3+len(dfc)] = dfc
+    gsi[11] = ord("1")
+    gsi[12:14] = b"00"
+    gsi[14:16] = b"0F"
+    opt = (project.title or "RythmoAI")[:32].encode("latin-1", errors="replace")
+    gsi[16:16+len(opt)] = opt
+    oet = (project.title[:32] if project.title else "Rythmo Band")[:32].encode("latin-1", errors="replace")
+    gsi[48:48+len(oet)] = oet
+    gsi[80:80+len(opt)] = opt
+    gsi[112:112+len(oet)] = oet
+    tn = b"RythmoAI"
+    gsi[144:144+len(tn)] = tn
+    tcd = b"RythmoAI Studio"
+    gsi[176:176+len(tcd)] = tcd
+    slr = str(project.id)[:16].encode("ascii", errors="replace")
+    gsi[208:208+len(slr)] = slr
+    cd = datetime.now(timezone.utc).strftime("%y%m%d").encode("ascii")
+    gsi[224:230] = cd
+    gsi[230:236] = cd
+    gsi[236:238] = b"01"
+    tnb_str = f"{len(replicas):05d}".encode("ascii")
+    gsi[238:243] = tnb_str
+    gsi[243:248] = tnb_str
+    gsi[248:251] = b"001"
+    gsi[251:253] = b"32"
+    gsi[253:255] = b"01"
+    gsi[255] = ord("0")
+    gsi[256:264] = b"00000000"
+    if replicas:
+        tcf_str = _format_timecode(replicas[0].start_ms).replace(":", "")[:8].encode("ascii")
+        tcf_str = (tcf_str + b"        ")[:8]
+        gsi[264:272] = tcf_str
+    else:
+        gsi[264:272] = b"00000000"
+    gsi[272] = ord("1")
+    gsi[273] = ord("1")
+    gsi[274:277] = b"FRA"
+    pub = b"RythmoAI EBU-STL Extended"
+    gsi[277:277+len(pub)] = pub
+    gsi[309:309+len(tn)] = tn
+    gsi[341:341+len(tcd)] = tcd
+    uda = f"RythmoAI Extended EBU-STL | Project:{project.title} | Replicas:{len(replicas)} | Generated:{datetime.now(timezone.utc).isoformat()} | FPS:{fps}".encode("latin-1", errors="replace")[:576]
+    gsi[448:448+len(uda)] = uda
+    with open(output_path, "wb") as f:
+        f.write(gsi)
+        for idx, r in enumerate(replicas, 1):
+            tti = bytearray(128)
+            tti[0] = 0
+            tti[1] = idx & 0xFF
+            tti[2] = (idx >> 8) & 0xFF
+            tti[3] = 0xFF
+            tti[4] = 0xFF
+            tci = _ms_to_stl_timecode(r.start_ms, fps)
+            tti[5:9] = tci
+            tco = _ms_to_stl_timecode(r.end_ms, fps)
+            tti[9:13] = tco
+            tti[13] = 0x16
+            tti[14] = 2
+            tti[15] = 0
+            tf_bytes = _stl_encode_text(r.text or "", r.typo_codes or {}, max_len=112)
+            tti[16:128] = tf_bytes
+            f.write(tti)
+
+def _typo_flags_bitmask(typo_codes: dict) -> int:
+    if not typo_codes:
+        return 0
+    mask = 0
+    for k, v in typo_codes.items():
+        if not v:
+            continue
+        kk = str(k).lower()
+        if kk in ("brackets", "bracket_in", "bracket_out", "crochets"):
+            mask |= 1
+        elif kk in ("italic", "italique", "voix_off", "off"):
+            mask |= 2
+        elif kk in ("uppercase", "majuscules", "cri", "caps"):
+            mask |= 4
+        elif kk in ("parentheses", "parentheses_jeu", "indication_jeu", "jeu"):
+            mask |= 8
+    return mask
+
+def _typo_flags_to_dict(mask: int) -> dict:
+    d = {}
+    if mask & 1:
+        d["crochets"] = True
+    if mask & 2:
+        d["italique"] = True
+    if mask & 4:
+        d["majuscules"] = True
+    if mask & 8:
+        d["parentheses"] = True
+    return d
+
+def _generate_cavena(project: Project, replicas: list, output_path: Path, variant: str = "cavena"):
+    is_rythmo = variant.lower() == "rythmo"
+    magic = b"RYTHMO\n" if is_rythmo else b"CAVENA\x00"
+    if len(magic) < 7:
+        magic = magic.ljust(7, b"\x00")
+    elif len(magic) > 7:
+        magic = magic[:7]
+    with open(output_path, "wb") as f:
+        f.write(magic)
+        f.write(struct.pack("B", 1))
+        f.write(struct.pack("B", 0))
+        f.write(struct.pack("<I", len(replicas)))
+        title_bytes = (project.title or "RythmoAI Project").encode("utf-8")
+        f.write(struct.pack("<H", len(title_bytes)))
+        f.write(title_bytes)
+        try:
+            studio_bytes = project.studio_id.bytes
+        except:
+            studio_bytes = uuid.UUID(str(project.studio_id)).bytes if project.studio_id else b"\x00"*16
+        f.write(studio_bytes)
+        f.write(struct.pack("B", 25))
+        f.write(struct.pack("<Q", int(datetime.now(timezone.utc).timestamp() * 1000)))
+        f.write(b"\x00" * 32)
+        for r in replicas:
+            start_ms = int(r.start_ms or 0)
+            end_ms = int(r.end_ms or 0)
+            if end_ms <= start_ms:
+                end_ms = start_ms + 1000
+            f.write(struct.pack("<I", start_ms))
+            f.write(struct.pack("<I", end_ms))
+            f.write(struct.pack("<H", int(r.order_index or 0)))
+            mask = _typo_flags_bitmask(r.typo_codes or {})
+            f.write(struct.pack("B", mask))
+            conf = float(r.confidence_score) if r.confidence_score is not None else 0.85
+            f.write(struct.pack("<f", conf))
+            speaker_str = str(r.speaker_id) if r.speaker_id else ""
+            spk_bytes = speaker_str.encode("utf-8")[:255]
+            f.write(struct.pack("B", len(spk_bytes)))
+            f.write(spk_bytes)
+            text_str = r.text or ""
+            text_bytes = text_str.encode("utf-8")
+            if len(text_bytes) > 65535:
+                text_bytes = text_bytes[:65535]
+            f.write(struct.pack("<H", len(text_bytes)))
+            f.write(text_bytes)
+            f.write(struct.pack("B", 1 if r.breath_marker else 0))
+            f.write(struct.pack("B", 0))
+        f.write(b"\xFF\xFE" if is_rythmo else b"\xFE\xFF")
+
+def _generate_rythmo(project: Project, replicas: list, output_path: Path):
+    return _generate_cavena(project, replicas, output_path, variant="rythmo")
+
+def _generate_json(project: Project, replicas: list, output_path: Path):
+    data = {
+        "project": {
+            "id": str(project.id),
+            "title": project.title,
+            "studio_id": str(project.studio_id),
+            "source_lang": project.source_lang,
+            "target_lang": project.target_lang,
+        },
+        "export": {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "replica_count": len(replicas),
+            "format": "json",
+            "version": "1.0",
+        },
+        "replicas": [
+            {
+                "id": str(r.id),
+                "media_id": str(r.media_id),
+                "speaker_id": str(r.speaker_id) if r.speaker_id else None,
+                "text": r.text,
+                "start_ms": r.start_ms,
+                "end_ms": r.end_ms,
+                "order_index": r.order_index,
+                "typo_codes": r.typo_codes or {},
+                "confidence_score": float(r.confidence_score) if r.confidence_score is not None else None,
+                "is_manually_edited": r.is_manually_edited,
+                "breath_marker": r.breath_marker,
+            }
+            for r in replicas
+        ],
+    }
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 def _generate_export_task(export_id: str, project_id: str):
     from app.core.database import SessionLocal
 
@@ -991,6 +1302,18 @@ def _generate_export_task(export_id: str, project_id: str):
         elif fmt == "vtt":
             output_path = EXPORT_DIR / f"{export_id}.vtt"
             _generate_vtt(project, replicas, output_path)
+        elif fmt == "stl":
+            output_path = EXPORT_DIR / f"{export_id}.stl"
+            _generate_stl(project, replicas, output_path)
+        elif fmt == "cavena":
+            output_path = EXPORT_DIR / f"{export_id}.cav"
+            _generate_cavena(project, replicas, output_path, variant="cavena")
+        elif fmt == "rythmo":
+            output_path = EXPORT_DIR / f"{export_id}.rythmo"
+            _generate_rythmo(project, replicas, output_path)
+        elif fmt == "json":
+            output_path = EXPORT_DIR / f"{export_id}.json"
+            _generate_json(project, replicas, output_path)
         else:
             output_path = EXPORT_DIR / f"{export_id}.{fmt}"
             with open(output_path, "w", encoding="utf-8") as f:
@@ -1059,7 +1382,7 @@ def create_export(
             pass
     fmt_raw = data.format or "pdf"
     fmt = _normalize_format(fmt_raw)
-    allowed = ("pdf", "srt", "vtt", "stl", "json", "quality_report")
+    allowed = ("pdf", "srt", "vtt", "stl", "cavena", "rythmo", "json", "quality_report")
     if fmt not in allowed:
         if _is_quality_report(fmt_raw):
             fmt = "quality_report"
@@ -1067,11 +1390,8 @@ def create_export(
             raise HTTPException(
                 status_code=422, detail=f"Format non supporté: {fmt_raw}"
             )
-    if fmt not in ("pdf", "srt", "vtt", "quality_report"):
-        raise HTTPException(
-            status_code=422,
-            detail=f"Format {fmt} non supporté dans cette version (pdf/srt/vtt/quality_report)",
-        )
+    # Tous les formats de l'allowed sont maintenant supportés : pdf/srt/vtt/stl/cavena/rythmo/json/quality_report
+    # Plus de restriction secondaire
 
     created_by = payload.get("email", "system") if payload else "system"
     creator_role = (
@@ -1143,10 +1463,23 @@ def create_export(
         elif fmt == "vtt":
             output_path = EXPORT_DIR / f"{export.id}.vtt"
             _generate_vtt(project, replicas, output_path)
+        elif fmt == "stl":
+            output_path = EXPORT_DIR / f"{export.id}.stl"
+            _generate_stl(project, replicas, output_path)
+        elif fmt == "cavena":
+            output_path = EXPORT_DIR / f"{export.id}.cav"
+            _generate_cavena(project, replicas, output_path, variant="cavena")
+        elif fmt == "rythmo":
+            output_path = EXPORT_DIR / f"{export.id}.rythmo"
+            _generate_rythmo(project, replicas, output_path)
+        elif fmt == "json":
+            output_path = EXPORT_DIR / f"{export.id}.json"
+            _generate_json(project, replicas, output_path)
         else:
             output_path = EXPORT_DIR / f"{export.id}.{fmt}"
             with open(output_path, "w", encoding="utf-8") as f:
-                f.write("")
+                for r in replicas:
+                    f.write(f"{r.text}\n")
         export.file_path = str(output_path)
         export.status = "completed"
         db.commit()
@@ -1252,6 +1585,18 @@ def download_export(
     elif fmt == "vtt":
         media_type = "text/vtt"
         ext = "vtt"
+    elif fmt == "stl":
+        media_type = "application/x-stl"
+        ext = "stl"
+    elif fmt == "cavena":
+        media_type = "application/x-cavena"
+        ext = "cav"
+    elif fmt == "rythmo":
+        media_type = "application/x-rythmo"
+        ext = "rythmo"
+    elif fmt == "json":
+        media_type = "application/json"
+        ext = "json"
     elif fmt == "pdf":
         media_type = "application/pdf"
         ext = "pdf"
