@@ -17,6 +17,59 @@ class ReplicaPatchIn(BaseModel):
     typo_codes: Optional[dict] = None
     overlap_allowed: bool = False
 
+# Codes typographiques métier §2.4
+ALLOWED_TYPO_CODES = {
+    "crochets", "brackets", "bracket_in", "bracket_out",
+    "italic", "italique", "voix_off", "off",
+    "uppercase", "majuscules", "cri", "caps",
+    "parentheses", "parentheses_jeu", "indication_jeu", "jeu",
+}
+
+# Mapping d'alias vers canonique pour cohérence
+TYPO_CANONICAL = {
+    "brackets": "crochets",
+    "bracket_in": "crochets",
+    "bracket_out": "crochets",
+    "crochets": "crochets",
+    "italic": "italique",
+    "italique": "italique",
+    "voix_off": "italique",
+    "off": "italique",
+    "uppercase": "majuscules",
+    "majuscules": "majuscules",
+    "cri": "majuscules",
+    "caps": "majuscules",
+    "parentheses": "parentheses",
+    "parentheses_jeu": "parentheses",
+    "indication_jeu": "parentheses",
+    "jeu": "parentheses",
+}
+
+def _normalize_typo_codes(raw: Optional[dict]) -> Optional[dict]:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=422, detail="typo_codes doit être un objet JSON")
+    normalized = {}
+    for k, v in raw.items():
+        key = str(k).lower().strip()
+        # Validation souple : on accepte les clés connues, mais on laisse passer les inconnues pour extensibilité
+        # Si on veut strict, décommenter :
+        # if key not in ALLOWED_TYPO_CODES and key not in TYPO_CANONICAL:
+        #     raise HTTPException(status_code=422, detail=f"Code typographique inconnu: {k}")
+        canonical = TYPO_CANONICAL.get(key, key)
+        # Valeur booléenne attendue
+        if isinstance(v, bool):
+            normalized[canonical] = v
+        elif isinstance(v, str):
+            # accepter "true"/"false" string
+            normalized[canonical] = v.lower() in ("true", "1", "oui", "yes")
+        elif isinstance(v, int):
+            normalized[canonical] = bool(v)
+        else:
+            normalized[canonical] = bool(v)
+    return normalized
+
 class ReplicaSplitIn(BaseModel):
     split_ms: Optional[int] = None
 
@@ -37,6 +90,17 @@ def _serialize_replica(r: Replica) -> dict:
         "is_manually_edited": r.is_manually_edited,
         "breath_marker": r.breath_marker,
     }
+
+@router.get("/replicas/{replica_id}", response_model=dict)
+def get_replica(
+    replica_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    """Récupère une réplique (utile pour vérifier typo_codes §9.4)"""
+    replica = db.query(Replica).filter(Replica.id == replica_id).first()
+    if not replica:
+        raise HTTPException(status_code=404, detail="Réplique non trouvée")
+    return _serialize_replica(replica)
 
 @router.patch("/replicas/{replica_id}", response_model=dict)
 def patch_replica(
@@ -62,6 +126,8 @@ def patch_replica(
         for s in siblings:
             if not (new_end <= s.start_ms or new_start >= s.end_ms):
                 raise HTTPException(status_code=422, detail=f"Chevauchement interdit avec réplique {s.id}")
+    # Normaliser typo_codes si fournis
+    normalized_typo = _normalize_typo_codes(data.typo_codes) if data.typo_codes is not None else None
     # Créer historique avant modification
     db.add(ReplicaHistory(
         replica_id=replica.id,
@@ -80,11 +146,30 @@ def patch_replica(
         replica.end_ms = data.end_ms
     if data.speaker_id is not None:
         replica.speaker_id = data.speaker_id
-    if data.typo_codes is not None:
-        replica.typo_codes = data.typo_codes
+    if normalized_typo is not None:
+        # Merge avec existant pour préserver les autres codes (§9.4)
+        existing = replica.typo_codes or {}
+        if not isinstance(existing, dict):
+            existing = {}
+        # Si le client envoie un dict vide, on considère qu'il veut vider
+        if len(normalized_typo) == 0 and len(data.typo_codes) == 0:
+            replica.typo_codes = {}
+        else:
+            merged = {**existing, **normalized_typo}
+            # Nettoyer les codes désactivés explicitement à False si on veut les retirer ?
+            # On garde False pour traçabilité ; l'éditeur interprète False comme désactivé
+            replica.typo_codes = merged
     replica.is_manually_edited = True
     db.commit()
-    return {"id": str(replica.id), "status": "updated", "is_manually_edited": True}
+    db.refresh(replica)
+    # Retour enrichi pour vérification immédiate des typo_codes
+    return {
+        "id": str(replica.id),
+        "status": "updated",
+        "is_manually_edited": True,
+        "typo_codes": replica.typo_codes,
+        "replica": _serialize_replica(replica),
+    }
 
 @router.post("/replicas/{replica_id}/split", response_model=dict)
 def split_replica(

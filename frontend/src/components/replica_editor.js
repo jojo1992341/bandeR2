@@ -2,9 +2,10 @@ import { store as defaultStore } from '../core/store.js';
 import { api as defaultApi } from '../services/api.js';
 
 /**
- * ReplicaEditor — éditeur de bande rythmo avec raccourcis §14.4
+ * ReplicaEditor — éditeur de bande rythmo avec raccourcis §14.4 et codes typo §2.4
  * - Ctrl+Maj+S : Scinder la réplique sélectionnée au point de lecture
  * - Ctrl+Maj+F : Fusionner avec la réplique suivante
+ * - Clic droit : menu codes typographiques (crochets, italique, majuscules, parenthèses)
  */
 
 export const ReplicaEditor = {
@@ -80,11 +81,6 @@ export function handleKeyDown(event, storeInstance = defaultStore, apiInstance =
         // Retirer les deux originales et insérer la fusionnée
         const idsToRemove = new Set(replicaIds);
         const remaining = storeInstance.replicas.filter((r) => !idsToRemove.has(r.id));
-        // Insérer au bon index (celui du premier)
-        const insertIdx = Math.min(
-          storeInstance.replicas.findIndex((r) => r.id === replicaIds[0]),
-          remaining.length
-        );
         const nextReplicas = [...remaining];
         // Insérer à l'endroit de la première réplique
         const originalIdx = storeInstance.replicas.findIndex((r) => r.id === replicaIds[0]);
@@ -104,21 +100,99 @@ export function handleKeyDown(event, storeInstance = defaultStore, apiInstance =
 }
 
 /**
- * Initialise l'écoute des raccourcis sur le document.
+ * Applique un code typographique via clic droit §2.4
+ * @param {string} replicaId
+ * @param {string} code - crochets|italique|majuscules|parentheses (alias acceptés)
+ * @param {boolean} value - active/désactive
  * @param {import('../core/store.js').RythmoStore} storeInstance
  * @param {typeof defaultApi} apiInstance
- * @returns {{destroy: () => void, handleKeyDown: Function}}
+ * @returns {Promise<any>}
+ */
+export async function applyTypoCode(replicaId, code, value, storeInstance = defaultStore, apiInstance = defaultApi) {
+  const replica = storeInstance.replicas.find((r) => r.id === replicaId);
+  if (!replica) throw new Error(`Réplique ${replicaId} non trouvée dans le store`);
+
+  // Normaliser le code (comme backend)
+  const canonicalMap = {
+    brackets: 'crochets', bracket_in: 'crochets', bracket_out: 'crochets',
+    crochets: 'crochets',
+    italic: 'italique', italique: 'italique', voix_off: 'italique', off: 'italique',
+    uppercase: 'majuscules', majuscules: 'majuscules', cri: 'majuscules', caps: 'majuscules',
+    parentheses: 'parentheses', parentheses_jeu: 'parentheses', indication_jeu: 'parentheses', jeu: 'parentheses',
+  };
+  const canon = canonicalMap[code.toLowerCase()] || code.toLowerCase();
+
+  // Construire le nouveau typo_codes en merge
+  const existing = replica.typo_codes || {};
+  const newTypo = { ...existing };
+  if (value) {
+    newTypo[canon] = true;
+  } else {
+    delete newTypo[canon];
+  }
+
+  // Appel API PATCH
+  const result = await apiInstance.patchReplica(replicaId, { typo_codes: newTypo });
+
+  // Mise à jour optimistic du store (utilise la réponse si disponible, sinon newTypo)
+  const updatedTypo = result?.typo_codes || result?.replica?.typo_codes || newTypo;
+  storeInstance.updateReplica(replicaId, { typo_codes: updatedTypo });
+
+  // Mettre à jour l'élément DOM rythmo-track si présent
+  if (typeof document !== 'undefined') {
+    const trackEl = document.querySelector(`rythmo-track[replica-id="${replicaId}"]`);
+    if (trackEl) {
+      trackEl.setAttribute('typo-codes', JSON.stringify(updatedTypo));
+    }
+    // Aussi mettre à jour tous les tracks correspondants (shadow DOM)
+    document.querySelectorAll('rythmo-track').forEach((el) => {
+      if (el.getAttribute('replica-id') === replicaId) {
+        el.setAttribute('typo-codes', JSON.stringify(updatedTypo));
+      }
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Gère l'événement custom `rythmo:typo` émis par rythmo-track lors d'un clic droit
+ * @param {CustomEvent} event - detail: {id, code, value, typoCodes}
+ * @param {import('../core/store.js').RythmoStore} storeInstance
+ * @param {typeof defaultApi} apiInstance
+ */
+export function handleTypoEvent(event, storeInstance = defaultStore, apiInstance = defaultApi) {
+  const detail = event.detail || {};
+  const replicaId = detail.id;
+  const code = detail.code;
+  const value = detail.value !== undefined ? detail.value : true;
+  if (!replicaId || !code) return;
+  // Empêcher la propagation si déjà géré
+  if (typeof event.preventDefault === 'function') event.preventDefault();
+  return applyTypoCode(replicaId, code, value, storeInstance, apiInstance);
+}
+
+/**
+ * Initialise l'écoute des raccourcis et des événements typo sur le document.
+ * @param {import('../core/store.js').RythmoStore} storeInstance
+ * @param {typeof defaultApi} apiInstance
+ * @returns {{destroy: () => void, handleKeyDown: Function, handleTypo: Function}}
  */
 export function initReplicaEditor(storeInstance = defaultStore, apiInstance = defaultApi) {
-  const listener = (e) => handleKeyDown(e, storeInstance, apiInstance);
+  const keyListener = (e) => handleKeyDown(e, storeInstance, apiInstance);
+  const typoListener = (e) => handleTypoEvent(e, storeInstance, apiInstance);
+
   if (typeof document !== 'undefined' && document.addEventListener) {
-    document.addEventListener('keydown', listener);
+    document.addEventListener('keydown', keyListener);
+    document.addEventListener('rythmo:typo', typoListener);
   }
   return {
-    handleKeyDown: listener,
+    handleKeyDown: keyListener,
+    handleTypo: typoListener,
     destroy() {
       if (typeof document !== 'undefined' && document.removeEventListener) {
-        document.removeEventListener('keydown', listener);
+        document.removeEventListener('keydown', keyListener);
+        document.removeEventListener('rythmo:typo', typoListener);
       }
     },
   };
@@ -126,24 +200,16 @@ export function initReplicaEditor(storeInstance = defaultStore, apiInstance = de
 
 // Auto-init côté navigateur (pas en environnement de test où l'on veut contrôler)
 if (typeof window !== 'undefined' && typeof document !== 'undefined' && window.store) {
-  // Si un store global existe, on s'y attache automatiquement
   try {
-    // Ne pas auto-init en mode test (vitest)
     if (!globalThis.__VITEST__ && !window.__VITEST__) {
       initReplicaEditor(defaultStore, defaultApi);
     }
-  } catch (_) {
-    // ignore
-  }
+  } catch (_) {}
 } else if (typeof document !== 'undefined' && !globalThis.__VITEST__) {
-  // Tenter auto-init même sans window.store (usage direct)
   try {
     if (typeof window !== 'undefined' && !window.__VITEST__) {
-      // Attendre DOM ready pour éviter double binding en tests
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => initReplicaEditor(defaultStore, defaultApi), { once: true });
-      } else {
-        // Ne pas auto-bind immédiatement pour laisser les tests mock document
       }
     }
   } catch (_) {}
