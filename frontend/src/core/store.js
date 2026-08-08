@@ -61,9 +61,14 @@ export class RythmoStore extends EventTarget {
     this.syncStatus = 'idle';
     // §16.4 — replica locks: { replicaId: { user_id, user_name } }
     this.replicaLocks = {};
+    // §8.2.5 — EmotionTags: { replicaId: EmotionTag[] }
+    this.emotionTags = {};
     // §16.1 — project lifecycle status
     this.projectStatus = null;  // e.g. 'En_edition', 'Valide', etc.
     this.projectStatusInfo = null;  // { label, is_editable, is_readonly, allowed_transitions }
+    // §2.4 / §16.3 — Profils typographiques par studio
+    this.typographicProfiles = [];
+    this.currentTypographicProfile = null;
   }
 
   setProject(p) {
@@ -316,6 +321,50 @@ export class RythmoStore extends EventTarget {
       this.replicaLocks = next;
     }
     this._dispatch('replicaLocks');
+  }
+
+  // §8.2.5 — Emotion / Intention tags (indicatif, ne modifie jamais le texte)
+  setEmotionTags(replicaId, tags) {
+    this.emotionTags = { ...this.emotionTags, [replicaId]: Array.isArray(tags) ? tags.map(t=>JSON.parse(JSON.stringify(t))) : [] };
+    this._dispatch('emotionTags');
+  }
+  getEmotionTags(replicaId) {
+    return this.emotionTags[replicaId] || [];
+  }
+  getSuggestedTypoCodes(replicaId) {
+    const tags = this.getEmotionTags(replicaId);
+    const merged = {};
+    for (const t of tags) {
+      const s = t.suggested_typo_codes || t.suggestedTypoCodes || {};
+      for (const [k,v] of Object.entries(s)) if(v) merged[k]=true;
+    }
+    return merged;
+  }
+  clearEmotionTags() {
+    this.emotionTags = {};
+    this._dispatch('emotionTags');
+  }
+
+  // §2.4 / §10.2 / §16.3 — Gestion des profils typographiques
+  setTypographicProfiles(profiles) {
+    this.typographicProfiles = Array.isArray(profiles) ? profiles.map(p=>JSON.parse(JSON.stringify(p))) : [];
+    // Mettre à jour le profil courant si is_default
+    const def = this.typographicProfiles.find(p=>p.is_default);
+    if (def) this.currentTypographicProfile = JSON.parse(JSON.stringify(def));
+    this._dispatch('typographicProfiles');
+  }
+  getTypographicProfiles() {
+    return this.typographicProfiles;
+  }
+  setCurrentTypographicProfile(profile) {
+    this.currentTypographicProfile = profile ? JSON.parse(JSON.stringify(profile)) : null;
+    this._dispatch('typographicProfiles');
+  }
+  getCurrentTypographicProfile() {
+    return this.currentTypographicProfile;
+  }
+  getTypographicProfileById(id) {
+    return this.typographicProfiles.find(p=>p.id===id) || null;
   }
 
   isReplicaLocked(replicaId) {

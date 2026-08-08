@@ -17,3 +17,9 @@ from .comment import Comment
 from .audit_log import AuditLog, AuditLogImmutableError, set_allow_audit_log_purge
 from .security_alert import SecurityAlert
 from .silence_event import SilenceEvent
+from .emotion_tag import EmotionTag
+from .typographic_profile import TypographicProfile
+from .lip_sync import LipSyncFrame, LipSyncResult
+from .feedback_log import AnonymizedCorrection
+from .sso_configuration import SsoConfiguration
+from .replica_crdt import ReplicaCrdtState, ReplicaCrdtOperation

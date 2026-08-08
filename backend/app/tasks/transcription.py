@@ -2,7 +2,14 @@ import os
 import uuid
 import subprocess
 from celery import Celery
-from faster_whisper import WhisperModel
+try:
+    from faster_whisper import WhisperModel
+except ImportError:
+    class WhisperModel:  # type: ignore
+        def __init__(self, *a, **kw):
+            pass
+        def transcribe(self, *a, **kw):
+            raise RuntimeError("faster_whisper not installed - fallback to dummy")
 
 celery_app = Celery("rythmoai", broker="redis://localhost:6379/0")
 

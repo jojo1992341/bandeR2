@@ -13,6 +13,9 @@ router = APIRouter()
 
 class RythmoGenerateIn(BaseModel):
     media_id: uuid.UUID
+    typographic_profile_id: Optional[uuid.UUID] = None
+    # Alternative : passer directement le nom du profil
+    typographic_profile_name: Optional[str] = None
 
 class VersionCreateIn(BaseModel):
     comment: Optional[str] = None
@@ -57,7 +60,30 @@ def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session =
     media = db.query(MediaAsset).filter(MediaAsset.id == data.media_id, MediaAsset.project_id == project_id).first()
     if not media:
         raise HTTPException(status_code=404, detail="Média non trouvé pour ce projet")
-    engine = RythmoEngine()
+    project = db.query(Project).filter(Project.id == project_id).first()
+    # §2.4 / §16.3 : récupérer le profil typographique effectif du studio
+    from app.services.typographic_profile_service import TypographicProfileService
+    profile_svc = TypographicProfileService(db)
+    effective_profile = None
+    try:
+        # Si un profile_id est passé explicitement, l'utiliser
+        if data.typographic_profile_id:
+            effective_profile = profile_svc.get_effective_profile(project.studio_id, data.typographic_profile_id)
+        elif data.typographic_profile_name:
+            # Chercher par nom
+            from app.models import TypographicProfile
+            prof = db.query(TypographicProfile).filter(TypographicProfile.studio_id == project.studio_id, TypographicProfile.name == data.typographic_profile_name).first()
+            if prof:
+                effective_profile = profile_svc.get_effective_profile(project.studio_id, prof.id)
+            else:
+                effective_profile = profile_svc.get_effective_profile(project.studio_id, None)
+        else:
+            effective_profile = profile_svc.get_effective_profile(project.studio_id, None)
+    except Exception as e:
+        import logging
+        logging.getLogger("rythmoai").warning(f"Profil typographique fallback défaut: {e}")
+        effective_profile = {"codes": {}, "thresholds": {}, "name": "default"}
+    engine = RythmoEngine(profile=effective_profile)
     from app.models import Word, TranscriptSegment
     words = db.query(Word).filter(Word.segment_id.in_(
         db.query(TranscriptSegment.id).filter(TranscriptSegment.media_id == media.id).subquery()
@@ -66,8 +92,12 @@ def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session =
     if not word_dicts:
         word_dicts = [{"text": "...", "start_ms": 0, "end_ms": 1000, "speaker_id": None}]
     replicas = engine.segment_words(word_dicts)
+    created_replicas = []
     for r in replicas:
-        db.add(Replica(
+        typo = r.get("typo_codes") or {}
+        # Si le profil définit des codes, ils sont appliqués automatiquement à la génération
+        # Sinon typo reste vide (ou selon heuristique)
+        rep = Replica(
             id=uuid.uuid4(),
             media_id=media.id,
             text=r["text"],
@@ -77,10 +107,85 @@ def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session =
             confidence_score=0.85,
             is_manually_edited=False,
             breath_marker=r.get("has_breath_marker", False),
-            order_index=len(db.query(Replica).filter(Replica.media_id == media.id).all()),
-        ))
+            order_index=len(db.query(Replica).filter(Replica.media_id == media.id).all()) + len(created_replicas),
+            typo_codes=typo,
+        )
+        db.add(rep)
+        created_replicas.append(rep)
     db.commit()
-    return {"project_id": str(project_id), "replica_count": len(replicas), "status": "Prêt pour édition"}
+    # §8.2.6 / §11.4 — Synchronisation labiale via FaceMesh (feature flag §19.3)
+    lip_sync_result = None
+    lip_refinement_metrics = None
+    try:
+        from app.core.config import get_settings
+        import os
+        settings = get_settings()
+        flag = settings.FEATURE_LIP_SYNC_ENABLED or settings.LIP_SYNC_ENABLED or os.getenv("FEATURE_LIP_SYNC", "").lower() in ("1", "true", "yes", "on") or settings.is_feature_enabled("lip_sync")
+        if flag:
+            from app.services.lip_sync_service import LipSyncService
+            # Détection si courbe non existante : tenter de détecter à partir du média
+            lip_svc = LipSyncService(db)
+            # Vérifier si une courbe existe déjà, sinon tenter détection (fallback synthétique si vidéo absente)
+            existing_curve = lip_svc.get_curve(media.id)
+            if not existing_curve:
+                # Détection : utilise storage_path comme chemin vidéo
+                try:
+                    lip_sync_result = lip_svc.detect_and_persist(media.id, media.storage_path or "")
+                except Exception as inner:
+                    import logging
+                    logging.getLogger("rythmoai").warning(f"Lip sync detection fallback: {inner}")
+                    lip_sync_result = {"status": "warning", "error": str(inner)}
+            else:
+                lip_sync_result = {"status": "ok", "frame_count": len(existing_curve), "face_visible_ratio": sum(1 for c in existing_curve if c.get("face_visible"))/len(existing_curve) if existing_curve else 0, "feature_enabled": True}
+            # Raffinement des crochets si courbe disponible et gros plan
+            if lip_sync_result and lip_sync_result.get("status") == "ok":
+                # Recharger les répliques créées avec leur lip_sync refinement
+                curve = lip_svc.get_curve(media.id)
+                if curve:
+                    # Utiliser le moteur pour raffiner
+                    from app.services.rythmo_engine import RythmoEngine as _Engine
+                    # On récupère les répliques en dict
+                    rep_dicts = [{"id": str(r.id), "text": r.text, "start_ms": r.start_ms, "end_ms": r.end_ms, "speaker_id": str(r.speaker_id) if r.speaker_id else None} for r in created_replicas]
+                    # Le flag est déjà vérifié, on raffine
+                    engine_lip = _Engine(profile=effective_profile)
+                    refined, metrics = engine_lip.refine_with_lip_sync(rep_dicts, curve, feature_enabled=True)
+                    lip_refinement_metrics = metrics
+                    # Appliquer les ajustements en DB
+                    for orig, ref in zip(created_replicas, refined):
+                        if ref["start_ms"] != orig.start_ms or ref["end_ms"] != orig.end_ms:
+                            orig.start_ms = ref["start_ms"]
+                            orig.end_ms = ref["end_ms"]
+                    db.commit()
+                    for r in created_replicas:
+                        db.refresh(r)
+                    lip_sync_result["refinement"] = metrics
+                else:
+                    lip_sync_result["refinement"] = {"status": "no_curve"}
+            else:
+                lip_sync_result = lip_sync_result or {"status": "skipped", "feature_enabled": True}
+        else:
+            lip_sync_result = {"status": "skipped", "feature_enabled": False, "reason": "feature_flag_disabled"}
+    except Exception as e:
+        import logging
+        logging.getLogger("rythmoai").warning(f"Lip sync pipeline warning (non-bloquant): {e}")
+        lip_sync_result = {"status": "warning", "error": str(e)}
+    # §8.2.5 — Double analyse acoustique + textuelle → EmotionTag (indicatif, ne modifie jamais le texte)
+    emotion_result = None
+    try:
+        from app.services.emotion_service import EmotionService
+        svc = EmotionService(db)
+        # Capture original texts pour garantir non-altération
+        original_texts = {rep.id: rep.text for rep in created_replicas}
+        emotion_result = svc.analyze_media_replicas(media.id)
+        # Vérification post-analyse : textes inchangés
+        for rep in created_replicas:
+            db.refresh(rep)
+            assert rep.text == original_texts[rep.id], "EmotionTag ne doit jamais altérer Replica.text"
+    except Exception as e:
+        import logging
+        logging.getLogger("rythmoai").warning(f"Emotion detection après génération rythmo warning (non-bloquant): {e}")
+        emotion_result = {"status": "warning", "error": str(e)}
+    return {"project_id": str(project_id), "replica_count": len(replicas), "status": "Prêt pour édition", "emotion_detection": emotion_result, "lip_sync": lip_sync_result, "typographic_profile": {"id": effective_profile.get("id"), "name": effective_profile.get("name"), "codes": effective_profile.get("codes"), "thresholds": effective_profile.get("thresholds")} if effective_profile else None}
 
 @router.get("/projects/{project_id}/replicas", response_model=list)
 def list_replicas(project_id: uuid.UUID, db: Session = Depends(get_db)):

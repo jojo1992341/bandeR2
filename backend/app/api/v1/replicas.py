@@ -5,7 +5,8 @@ from sqlalchemy import and_
 from typing import Optional, List
 import uuid
 from app.core.database import get_db
-from app.models import Replica, ReplicaHistory, MediaAsset, MediaAsset as _Media, Project as _Project
+from app.core.rbac import get_optional_user_payload
+from app.models import Replica, ReplicaHistory, MediaAsset, MediaAsset as _Media, Project as _Project, Studio
 from app.domain.rules.project_lifecycle import can_edit_replica
 
 router = APIRouter()
@@ -113,6 +114,7 @@ async def patch_replica(
     replica_id: uuid.UUID,
     data: ReplicaPatchIn,
     db: Session = Depends(get_db),
+    payload: dict = Depends(get_optional_user_payload),
 ):
     """
     PATCH /replicas/{id} §16.4 — Édition avec verrouillage optimiste.
@@ -156,6 +158,12 @@ async def patch_replica(
                 raise HTTPException(status_code=422, detail=f"Chevauchement interdit avec réplique {s.id}")
     # Normaliser typo_codes si fournis
     normalized_typo = _normalize_typo_codes(data.typo_codes) if data.typo_codes is not None else None
+    # Sauvegarder l'état original pour le feedback §8.5 (avant modification)
+    _orig_start = replica.start_ms
+    _orig_end = replica.end_ms
+    _orig_speaker = replica.speaker_id
+    _orig_typo = dict(replica.typo_codes or {}) if isinstance(replica.typo_codes, dict) else {}
+    _orig_text = replica.text
     # Créer historique avant modification
     db.add(ReplicaHistory(
         replica_id=replica.id,
@@ -199,6 +207,68 @@ async def patch_replica(
     replica.version = (replica.version or 0) + 1  # §16.4 — incrémenter le version optimistic lock
     db.commit()
     db.refresh(replica)
+
+    # §8.5 — Journalisation anonymisée des corrections manuelles (feedback loop)
+    try:
+        from app.services.feedback_service import FeedbackService
+        # Récupérer le studio via media/project
+        _media_for_feedback = db.query(_Media).filter(_Media.id == replica.media_id).first()
+        _project_for_feedback = db.query(_Project).filter(_Project.id == _media_for_feedback.project_id).first() if _media_for_feedback else None
+        _studio_id = _project_for_feedback.studio_id if _project_for_feedback else None
+        if _studio_id:
+            svc = FeedbackService(db)
+            if svc.has_consent(_studio_id):
+                user_id = None
+                if payload and payload.get("sub"):
+                    try:
+                        user_id = uuid.UUID(payload.get("sub"))
+                    except:
+                        pass
+                # 1) Recalage temporel (word_realign) : si start_ms ou end_ms a changé
+                if data.start_ms is not None or data.end_ms is not None:
+                    if _orig_start != replica.start_ms or _orig_end != replica.end_ms:
+                        svc.log_correction(
+                            studio_id=_studio_id,
+                            correction_type="word_realign",
+                            project_id=_project_for_feedback.id if _project_for_feedback else None,
+                            media_id=replica.media_id,
+                            original_data={"word_id": str(replica.id), "start_ms": _orig_start, "end_ms": _orig_end, "text": _orig_text, "text_length": len(_orig_text or ""), "confidence_score": float(replica.confidence_score) if replica.confidence_score is not None else None},
+                            corrected_data={"word_id": str(replica.id), "start_ms": replica.start_ms, "end_ms": replica.end_ms, "text_length": len(replica.text or "")},
+                            heuristic_target="prosody",
+                            user_id=user_id,
+                        )
+                # 2) Correction de locuteur
+                if data.speaker_id is not None and str(data.speaker_id) != str(_orig_speaker):
+                    svc.log_correction(
+                        studio_id=_studio_id,
+                        correction_type="speaker_correction",
+                        project_id=_project_for_feedback.id if _project_for_feedback else None,
+                        media_id=replica.media_id,
+                        original_data={"speaker_id": str(_orig_speaker) if _orig_speaker else None},
+                        corrected_data={"speaker_id": str(replica.speaker_id) if replica.speaker_id else None, "num_words_affected": 1},
+                        heuristic_target="diarization",
+                        user_id=user_id,
+                    )
+                # 3) Changement de code typographique
+                if normalized_typo is not None:
+                    # Comparer les codes (anonymisés, sans stocker le texte)
+                    orig_typo_for_log = _orig_typo
+                    corr_typo_for_log = dict(replica.typo_codes or {})
+                    # Vérifier si les codes ont réellement changé
+                    if orig_typo_for_log != corr_typo_for_log:
+                        svc.log_correction(
+                            studio_id=_studio_id,
+                            correction_type="typo_code_change",
+                            project_id=_project_for_feedback.id if _project_for_feedback else None,
+                            media_id=replica.media_id,
+                            original_data={"typo_codes": orig_typo_for_log},
+                            corrected_data={"typo_codes": corr_typo_for_log},
+                            heuristic_target="emotion",
+                            user_id=user_id,
+                        )
+    except Exception as _fb_e:
+        import logging
+        logging.getLogger("rythmoai").warning(f"Feedback log échoué (non bloquant): {_fb_e}")
 
     # §16.4 — Diffuser la mise à jour via WebSocket
     try:

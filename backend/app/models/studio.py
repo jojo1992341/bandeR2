@@ -28,6 +28,16 @@ class Studio(Base):
             "retention_days": 30,
         },
     )
+    # §8.5 Feedback loop — consentement contractuel studio pour journalisation anonymisée
+    feedback_settings: Mapped[dict | None] = mapped_column(
+        JSON,
+        default=lambda: {
+            "enabled": False,
+            "consented_at": None,
+            "consented_by": None,
+            "version": 1,
+        },
+    )
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -259,4 +259,133 @@ export const api = {
     if (!res.ok) throw new Error(`listStudioProjects failed ${res.status}: ${await res.text()}`);
     return res.json();
   },
+
+  // ==================== Emotions & Intentions §8.2.5 ====================
+
+  async getReplicaEmotionTags(replicaId) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/emotion-tags`);
+    if (!res.ok) throw new Error(`getReplicaEmotionTags failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async detectReplicaEmotionTags(replicaId) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/emotion-tags/detect`, { method: 'POST' });
+    if (!res.ok) throw new Error(`detectReplicaEmotionTags failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async getMediaEmotionTags(mediaId) {
+    const res = await fetch(`/api/v1/media/${mediaId}/emotion-tags`);
+    if (!res.ok) throw new Error(`getMediaEmotionTags failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async detectMediaEmotionTags(mediaId) {
+    const res = await fetch(`/api/v1/media/${mediaId}/emotion-tags/detect`, { method: 'POST' });
+    if (!res.ok) throw new Error(`detectMediaEmotionTags failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async getProjectEmotionTags(projectId) {
+    const res = await fetch(`/api/v1/projects/${projectId}/emotion-tags`);
+    if (!res.ok) throw new Error(`getProjectEmotionTags failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async detectProjectEmotionTags(projectId) {
+    const res = await fetch(`/api/v1/projects/${projectId}/emotion-tags/detect`, { method: 'POST' });
+    if (!res.ok) throw new Error(`detectProjectEmotionTags failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async getReplicasWithEmotions(projectId) {
+    const res = await fetch(`/api/v1/projects/${projectId}/replicas/with-emotions`);
+    if (!res.ok) throw new Error(`getReplicasWithEmotions failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  // ==================== Typographic Profiles §2.4 / §10.2 / §16.3 ====================
+
+  async getTypographicProfiles(studioId) {
+    const res = await fetch(`/api/v1/studios/${studioId}/typographic-profiles`);
+    if (!res.ok) throw new Error(`getTypographicProfiles failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async createTypographicProfile(studioId, profile) {
+    const res = await fetch(`/api/v1/studios/${studioId}/typographic-profiles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
+    });
+    if (!res.ok) throw new Error(`createTypographicProfile failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async patchTypographicProfiles(studioId, patch) {
+    const res = await fetch(`/api/v1/studios/${studioId}/typographic-profiles`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(`patchTypographicProfiles failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async getTypographicProfile(studioId, profileId) {
+    const res = await fetch(`/api/v1/studios/${studioId}/typographic-profiles/${profileId}`);
+    if (!res.ok) throw new Error(`getTypographicProfile failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async patchTypographicProfile(studioId, profileId, patch) {
+    const res = await fetch(`/api/v1/studios/${studioId}/typographic-profiles/${profileId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(`patchTypographicProfile failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async deleteTypographicProfile(studioId, profileId) {
+    const res = await fetch(`/api/v1/studios/${studioId}/typographic-profiles/${profileId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`deleteTypographicProfile failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async generateRythmo(projectId, mediaId, typographicProfileId = null) {
+    const body = { media_id: mediaId };
+    if (typographicProfileId) body.typographic_profile_id = typographicProfileId;
+    const res = await fetch(`/api/v1/projects/${projectId}/rythmo/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`generateRythmo failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  // ==================== Search §16.1 ====================
+
+  async searchStudio(studioId, query, { limit = 20, offset = 0, includeReplicas = true, includeTranscripts = true } = {}) {
+    const params = new URLSearchParams({ q: query, limit: String(limit), offset: String(offset), include_replicas: String(includeReplicas), include_transcripts: String(includeTranscripts) });
+    const res = await fetch(`/api/v1/studios/${studioId}/search?${params.toString()}`);
+    if (!res.ok) throw new Error(`searchStudio failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async searchStudioSuggest(studioId, query, limit = 5) {
+    const params = new URLSearchParams({ q: query, limit: String(limit) });
+    const res = await fetch(`/api/v1/studios/${studioId}/search/suggest?${params.toString()}`);
+    if (!res.ok) throw new Error(`searchStudioSuggest failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  // Dashboard enrichi §16.1 US-053
+  async getStudioDashboardEnriched(studioId) {
+    const res = await fetch(`/api/v1/studios/${studioId}/dashboard`);
+    if (!res.ok) throw new Error(`getStudioDashboardEnriched failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
 };

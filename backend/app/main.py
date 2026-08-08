@@ -20,6 +20,14 @@ from app.api.v1 import (
     backups,
     silences,
     speech_rate,
+    emotions,
+    typographic_profiles,
+    lip_sync,
+    search,
+    feedback,
+    words,
+    sso,
+    crdt,
 )
 from app.core.config import get_settings
 from app.core.logging import logger
@@ -80,6 +88,7 @@ app.include_router(media.router, tags=["media"])
 app.include_router(media.router, prefix="/api/v1", tags=["media-api"])
 app.include_router(pipeline_ws.router, tags=["pipeline"])
 app.include_router(speakers.router, tags=["speakers"])
+app.include_router(speakers.router, prefix="/api/v1", tags=["speakers-api"])
 app.include_router(replicas.router, prefix="/api/v1", tags=["replicas"])
 app.include_router(replica_lock_ws.router, prefix="/api/v1", tags=["replica-locks"])
 app.include_router(
@@ -91,3 +100,14 @@ app.include_router(audit.router, tags=["audit"])
 app.include_router(backups.router, tags=["backups"])
 app.include_router(silences.router, tags=["silences"])
 app.include_router(speech_rate.router, tags=["speech-rate"])
+app.include_router(emotions.router, tags=["emotions"])
+app.include_router(typographic_profiles.router, tags=["typographic-profiles"])
+app.include_router(lip_sync.router, tags=["lip-sync"])
+app.include_router(search.router, prefix="/api/v1", tags=["search"])
+app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"])
+app.include_router(sso.router, prefix="/api/v1", tags=["sso"])
+app.include_router(sso.router, tags=["sso-alt"])
+app.include_router(crdt.router, prefix="/api/v1", tags=["crdt"])
+app.include_router(crdt.router, tags=["crdt-alt"])
+app.include_router(words.router, prefix="/api/v1", tags=["words"])
+app.include_router(words.router, tags=["words-alt"])

@@ -130,6 +130,11 @@ export class Dashboard {
         <span class="dash-plan">${studio_plan || 'free'}</span>
       </div>
 
+      <div class="dash-search" data-testid="dash-search" style="margin: 1rem 0;">
+        <input type="text" placeholder="Rechercher dans les transcriptions..." data-testid="search-input" style="width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #3f3f46; background: #0b0c15; color: #e8e8ec;" />
+        <div data-testid="search-results" style="margin-top: 0.5rem;"></div>
+      </div>
+
       <div class="dash-indicators" data-testid="dash-indicators">
         ${this._renderIndicators(indicators)}
       </div>
@@ -155,11 +160,46 @@ export class Dashboard {
     el.querySelectorAll('.dash-filter-btn').forEach(btn => {
       btn.addEventListener('click', this._onFilterClick);
     });
+    // Bind search
+    const searchInput = el.querySelector('[data-testid="search-input"]');
+    if (searchInput) {
+      let timeout;
+      searchInput.addEventListener('input', (e) => {
+        clearTimeout(timeout);
+        const q = e.target.value.trim();
+        if (q.length < 2) {
+          const resEl = el.querySelector('[data-testid="search-results"]');
+          if (resEl) resEl.innerHTML = '';
+          return;
+        }
+        timeout = setTimeout(() => {
+          api.searchStudio(this.studioId, q, { limit: 5 }).then(result => {
+            const resEl = el.querySelector('[data-testid="search-results"]');
+            if (!resEl) return;
+            if (result.projects.length === 0 && result.replicas.length === 0) {
+              resEl.innerHTML = '<div style="opacity:0.6;">Aucun résultat</div>';
+            } else {
+              resEl.innerHTML = '<div style="font-size:0.85rem; opacity:0.8;">' + result.total_projects + ' projets, ' + result.total_replicas + ' répliques (' + result.latency_ms + 'ms, ' + result.engine + ')</div>' +
+                result.projects.map(p => '<div data-testid="search-project" data-project-id="' + p.id + '">' + p.title + ' (' + p.total_matches + ' matches)</div>').join('') +
+                result.replicas.slice(0,3).map(r => '<div data-testid="search-replica" data-replica-id="' + r.id + '">' + r.highlighted + '</div>').join('');
+            }
+          }).catch(err => {
+            console.warn('search failed', err);
+          });
+        }, 300);
+      });
+    }
   }
 
   _renderIndicators(ind) {
     const quotaWarn = ind.quota.percent_used >= 80 ? 'dash-quota-warn' : '';
     const quotaCritical = ind.quota.percent_used >= 95 ? 'dash-quota-critical' : '';
+    // Enrichis US-053 : totaux durée, répliques, speakers, confiance, stockage
+    const totalHours = ind.total_duration_hours ?? (ind.total_duration_seconds ? (ind.total_duration_seconds/3600).toFixed(1) : '0');
+    const totalReplicas = ind.total_replicas ?? 0;
+    const totalSpeakers = ind.total_speakers ?? 0;
+    const avgConf = ind.avg_confidence_global != null ? (ind.avg_confidence_global*100).toFixed(1)+'%' : '—';
+    const storageMb = ind.total_storage_mb ?? 0;
     return `
       <div class="dash-indicator" data-testid="indicator-total">
         <span class="dash-indicator-value">${ind.total_projects}</span>
@@ -172,6 +212,26 @@ export class Dashboard {
       <div class="dash-indicator" data-testid="indicator-avg-time">
         <span class="dash-indicator-value">${formatDuration(ind.avg_processing_seconds)}</span>
         <span class="dash-indicator-label">Temps moy. pipeline</span>
+      </div>
+      <div class="dash-indicator" data-testid="indicator-replicas">
+        <span class="dash-indicator-value">${totalReplicas}</span>
+        <span class="dash-indicator-label">Répliques totales</span>
+      </div>
+      <div class="dash-indicator" data-testid="indicator-speakers">
+        <span class="dash-indicator-value">${totalSpeakers}</span>
+        <span class="dash-indicator-label">Speakers</span>
+      </div>
+      <div class="dash-indicator" data-testid="indicator-duration">
+        <span class="dash-indicator-value">${totalHours}h</span>
+        <span class="dash-indicator-label">Durée totale</span>
+      </div>
+      <div class="dash-indicator" data-testid="indicator-confidence">
+        <span class="dash-indicator-value">${avgConf}</span>
+        <span class="dash-indicator-label">Confiance moy.</span>
+      </div>
+      <div class="dash-indicator" data-testid="indicator-storage">
+        <span class="dash-indicator-value">${storageMb} MB</span>
+        <span class="dash-indicator-label">Stockage</span>
       </div>
       <div class="dash-indicator ${quotaWarn} ${quotaCritical}" data-testid="indicator-quota">
         <span class="dash-indicator-value">${ind.quota.remaining_minutes}min</span>
@@ -201,17 +261,31 @@ export class Dashboard {
             <th>Statut</th>
             <th>Pipeline</th>
             <th>Dernière modif</th>
+            <th>Répliques</th>
+            <th>Speakers</th>
+            <th>Durée</th>
+            <th>Confiance</th>
           </tr>
         </thead>
         <tbody>
-          ${filtered.map(p => `
+          ${filtered.map(p => {
+            const stats = p.stats || {};
+            const rc = stats.replica_count ?? p.replica_count ?? '—';
+            const sc = stats.speaker_count ?? p.speaker_count ?? '—';
+            const dur = stats.total_duration_seconds ? formatDuration(stats.total_duration_seconds) : (p.duration_seconds ? formatDuration(p.duration_seconds) : '—');
+            const conf = stats.avg_confidence != null ? (stats.avg_confidence*100).toFixed(0)+'%' : (p.avg_confidence != null ? (p.avg_confidence*100).toFixed(0)+'%' : '—');
+            return `
             <tr class="dash-row" data-project-id="${p.id}" data-status="${p.status}" data-testid="project-row">
               <td class="dash-cell-title">${p.title}</td>
               <td class="dash-cell-status">${renderStatusBadge(p.status)}</td>
               <td class="dash-cell-pipeline">${renderPipelineProgress(p.pipeline)}</td>
               <td class="dash-cell-date">${formatDate(p.updated_at)}</td>
+              <td class="dash-cell-replicas" data-testid="cell-replicas">${rc}</td>
+              <td class="dash-cell-speakers" data-testid="cell-speakers">${sc}</td>
+              <td class="dash-cell-duration" data-testid="cell-duration">${dur}</td>
+              <td class="dash-cell-confidence" data-testid="cell-confidence">${conf}</td>
             </tr>
-          `).join('')}
+          `}).join('')}
         </tbody>
       </table>
     `;
