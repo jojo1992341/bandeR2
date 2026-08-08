@@ -20,3 +20,4 @@ from .silence_event import SilenceEvent
 from .emotion_tag import EmotionTag
 from .typographic_profile import TypographicProfile
 from .lip_sync import LipSyncFrame, LipSyncResult
+from .feedback_log import AnonymizedCorrection
