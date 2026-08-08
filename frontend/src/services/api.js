@@ -259,4 +259,48 @@ export const api = {
     if (!res.ok) throw new Error(`listStudioProjects failed ${res.status}: ${await res.text()}`);
     return res.json();
   },
+
+  // ==================== Emotions & Intentions §8.2.5 ====================
+
+  async getReplicaEmotionTags(replicaId) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/emotion-tags`);
+    if (!res.ok) throw new Error(`getReplicaEmotionTags failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async detectReplicaEmotionTags(replicaId) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/emotion-tags/detect`, { method: 'POST' });
+    if (!res.ok) throw new Error(`detectReplicaEmotionTags failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async getMediaEmotionTags(mediaId) {
+    const res = await fetch(`/api/v1/media/${mediaId}/emotion-tags`);
+    if (!res.ok) throw new Error(`getMediaEmotionTags failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async detectMediaEmotionTags(mediaId) {
+    const res = await fetch(`/api/v1/media/${mediaId}/emotion-tags/detect`, { method: 'POST' });
+    if (!res.ok) throw new Error(`detectMediaEmotionTags failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async getProjectEmotionTags(projectId) {
+    const res = await fetch(`/api/v1/projects/${projectId}/emotion-tags`);
+    if (!res.ok) throw new Error(`getProjectEmotionTags failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async detectProjectEmotionTags(projectId) {
+    const res = await fetch(`/api/v1/projects/${projectId}/emotion-tags/detect`, { method: 'POST' });
+    if (!res.ok) throw new Error(`detectProjectEmotionTags failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async getReplicasWithEmotions(projectId) {
+    const res = await fetch(`/api/v1/projects/${projectId}/replicas/with-emotions`);
+    if (!res.ok) throw new Error(`getReplicasWithEmotions failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
 };

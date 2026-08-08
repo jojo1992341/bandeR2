@@ -61,6 +61,8 @@ export class RythmoStore extends EventTarget {
     this.syncStatus = 'idle';
     // §16.4 — replica locks: { replicaId: { user_id, user_name } }
     this.replicaLocks = {};
+    // §8.2.5 — EmotionTags: { replicaId: EmotionTag[] }
+    this.emotionTags = {};
     // §16.1 — project lifecycle status
     this.projectStatus = null;  // e.g. 'En_edition', 'Valide', etc.
     this.projectStatusInfo = null;  // { label, is_editable, is_readonly, allowed_transitions }
@@ -316,6 +318,28 @@ export class RythmoStore extends EventTarget {
       this.replicaLocks = next;
     }
     this._dispatch('replicaLocks');
+  }
+
+  // §8.2.5 — Emotion / Intention tags (indicatif, ne modifie jamais le texte)
+  setEmotionTags(replicaId, tags) {
+    this.emotionTags = { ...this.emotionTags, [replicaId]: Array.isArray(tags) ? tags.map(t=>JSON.parse(JSON.stringify(t))) : [] };
+    this._dispatch('emotionTags');
+  }
+  getEmotionTags(replicaId) {
+    return this.emotionTags[replicaId] || [];
+  }
+  getSuggestedTypoCodes(replicaId) {
+    const tags = this.getEmotionTags(replicaId);
+    const merged = {};
+    for (const t of tags) {
+      const s = t.suggested_typo_codes || t.suggestedTypoCodes || {};
+      for (const [k,v] of Object.entries(s)) if(v) merged[k]=true;
+    }
+    return merged;
+  }
+  clearEmotionTags() {
+    this.emotionTags = {};
+    this._dispatch('emotionTags');
   }
 
   isReplicaLocked(replicaId) {

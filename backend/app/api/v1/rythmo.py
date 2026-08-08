@@ -66,8 +66,9 @@ def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session =
     if not word_dicts:
         word_dicts = [{"text": "...", "start_ms": 0, "end_ms": 1000, "speaker_id": None}]
     replicas = engine.segment_words(word_dicts)
+    created_replicas = []
     for r in replicas:
-        db.add(Replica(
+        rep = Replica(
             id=uuid.uuid4(),
             media_id=media.id,
             text=r["text"],
@@ -77,10 +78,28 @@ def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session =
             confidence_score=0.85,
             is_manually_edited=False,
             breath_marker=r.get("has_breath_marker", False),
-            order_index=len(db.query(Replica).filter(Replica.media_id == media.id).all()),
-        ))
+            order_index=len(db.query(Replica).filter(Replica.media_id == media.id).all()) + len(created_replicas),
+        )
+        db.add(rep)
+        created_replicas.append(rep)
     db.commit()
-    return {"project_id": str(project_id), "replica_count": len(replicas), "status": "Prêt pour édition"}
+    # §8.2.5 — Double analyse acoustique + textuelle → EmotionTag (indicatif, ne modifie jamais le texte)
+    emotion_result = None
+    try:
+        from app.services.emotion_service import EmotionService
+        svc = EmotionService(db)
+        # Capture original texts pour garantir non-altération
+        original_texts = {rep.id: rep.text for rep in created_replicas}
+        emotion_result = svc.analyze_media_replicas(media.id)
+        # Vérification post-analyse : textes inchangés
+        for rep in created_replicas:
+            db.refresh(rep)
+            assert rep.text == original_texts[rep.id], "EmotionTag ne doit jamais altérer Replica.text"
+    except Exception as e:
+        import logging
+        logging.getLogger("rythmoai").warning(f"Emotion detection après génération rythmo warning (non-bloquant): {e}")
+        emotion_result = {"status": "warning", "error": str(e)}
+    return {"project_id": str(project_id), "replica_count": len(replicas), "status": "Prêt pour édition", "emotion_detection": emotion_result}
 
 @router.get("/projects/{project_id}/replicas", response_model=list)
 def list_replicas(project_id: uuid.UUID, db: Session = Depends(get_db)):

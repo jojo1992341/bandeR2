@@ -17,3 +17,4 @@ from .comment import Comment
 from .audit_log import AuditLog, AuditLogImmutableError, set_allow_audit_log_purge
 from .security_alert import SecurityAlert
 from .silence_event import SilenceEvent
+from .emotion_tag import EmotionTag
