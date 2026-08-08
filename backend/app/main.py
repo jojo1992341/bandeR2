@@ -23,6 +23,7 @@ from app.api.v1 import (
     emotions,
     typographic_profiles,
     lip_sync,
+    search,
 )
 from app.core.config import get_settings
 from app.core.logging import logger
@@ -97,3 +98,4 @@ app.include_router(speech_rate.router, tags=["speech-rate"])
 app.include_router(emotions.router, tags=["emotions"])
 app.include_router(typographic_profiles.router, tags=["typographic-profiles"])
 app.include_router(lip_sync.router, tags=["lip-sync"])
+app.include_router(search.router, prefix="/api/v1", tags=["search"])

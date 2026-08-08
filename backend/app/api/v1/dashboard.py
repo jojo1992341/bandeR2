@@ -1,5 +1,6 @@
 """
 Dashboard API §14.2.1 — Vue synthétique des projets d'un studio.
+Enrichi §16.1 + US-053 approfondi (usage/performance par projet)
 
 Endpoints :
   - GET /studios/{studio_id}/dashboard — Vue synthétique (projets + indicateurs)
@@ -10,6 +11,7 @@ Indicateurs studio :
   - Volume traité dans le mois
   - Quota restant (minutes IA)
   - Répartition par statut
+  - (Enrichi) Durée totale, répliques, speakers, confiance moyenne, stockage
 """
 
 import uuid
@@ -19,7 +21,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, case, and_
 from typing import Optional, List
 from app.core.database import get_db
-from app.models import Studio, Project, PipelineJob, MediaAsset
+from app.models import Studio, Project, PipelineJob, MediaAsset, Replica, Speaker, TranscriptSegment, Word
 from app.domain.rules.project_lifecycle import ProjectStatus, _resolve_status
 
 router = APIRouter()
@@ -41,6 +43,86 @@ def _status_is_editable(status_value: str) -> bool:
         return True
 
 
+def _get_project_stats(project: Project, db: Session) -> dict:
+    """Calcule les statistiques de performance/usage pour un projet (US-053 approfondi)."""
+    # Media assets
+    medias = db.query(MediaAsset).filter(MediaAsset.project_id == project.id).all()
+    media_ids = [m.id for m in medias]
+    # Répliques
+    replicas = []
+    speakers = []
+    transcripts = []
+    words = []
+    if media_ids:
+        replicas = db.query(Replica).filter(Replica.media_id.in_(media_ids)).all()
+        transcripts = db.query(TranscriptSegment).filter(TranscriptSegment.media_id.in_(media_ids)).all()
+        # Words via transcript segments
+        if transcripts:
+            seg_ids = [s.id for s in transcripts]
+            words = db.query(Word).filter(Word.segment_id.in_(seg_ids)).all()
+    # Speakers pour le projet
+    speakers = db.query(Speaker).filter(Speaker.project_id == project.id).all()
+
+    replica_count = len(replicas)
+    speaker_count = len(speakers)
+    transcript_count = len(transcripts)
+    word_count = len(words)
+
+    # Confiance moyenne
+    avg_confidence = None
+    if replicas:
+        scores = [float(r.confidence_score) for r in replicas if r.confidence_score is not None]
+        if scores:
+            avg_confidence = round(sum(scores) / len(scores), 3)
+
+    # Durée totale : max end_ms des répliques ou duration_seconds des medias
+    total_duration_seconds = 0
+    if medias:
+        for m in medias:
+            if m.duration_seconds and m.duration_seconds > 0:
+                total_duration_seconds += float(m.duration_seconds)
+            else:
+                # Fallback : max end_ms
+                max_end = max((r.end_ms for r in replicas), default=0)
+                if max_end:
+                    total_duration_seconds = max(total_duration_seconds, max_end / 1000.0)
+    elif replicas:
+        max_end = max((r.end_ms for r in replicas), default=0)
+        total_duration_seconds = max_end / 1000.0
+
+    # Stockage estimé : file_size_bytes des medias
+    storage_bytes = sum(m.file_size_bytes for m in medias if m.file_size_bytes) if medias else 0
+    storage_mb = round(storage_bytes / (1024*1024), 2) if storage_bytes else 0.0
+
+    # Pipeline performance : temps de traitement pour ce projet
+    job = db.query(PipelineJob).filter(PipelineJob.project_id == project.id).order_by(PipelineJob.updated_at.desc()).first()
+    pipeline_duration = None
+    pipeline_status = job.status if job else None
+    if job and job.status == "completed" and job.updated_at and project.created_at:
+        try:
+            j_upd = job.updated_at.replace(tzinfo=timezone.utc) if job.updated_at.tzinfo is None else job.updated_at
+            p_cr = project.created_at.replace(tzinfo=timezone.utc) if project.created_at.tzinfo is None else project.created_at
+            delta = j_upd - p_cr
+            if delta.total_seconds() > 0:
+                pipeline_duration = round(delta.total_seconds(), 1)
+        except:
+            pass
+
+    return {
+        "replica_count": replica_count,
+        "speaker_count": speaker_count,
+        "transcript_segment_count": transcript_count,
+        "word_count": word_count,
+        "avg_confidence": avg_confidence,
+        "total_duration_seconds": round(total_duration_seconds, 2) if total_duration_seconds else 0.0,
+        "total_duration_minutes": round(total_duration_seconds / 60, 2) if total_duration_seconds else 0.0,
+        "storage_bytes": storage_bytes,
+        "storage_mb": storage_mb,
+        "pipeline_duration_seconds": pipeline_duration,
+        "pipeline_status": pipeline_status,
+    }
+
+
 def _serialize_project_row(p: Project, db: Session) -> dict:
     """Serialise un projet avec avancement pipeline et dernière modification."""
     # Dernier job pipeline
@@ -60,6 +142,9 @@ def _serialize_project_row(p: Project, db: Session) -> dict:
             "updated_at": job.updated_at.isoformat() if job.updated_at else None,
         }
 
+    # Stats enrichies US-053
+    stats = _get_project_stats(p, db)
+
     return {
         "id": str(p.id),
         "title": p.title,
@@ -71,6 +156,12 @@ def _serialize_project_row(p: Project, db: Session) -> dict:
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "updated_at": p.updated_at.isoformat() if p.updated_at else None,
         "pipeline": pipeline_info,
+        "stats": stats,
+        # Champs aplatis pour compatibilité / tri
+        "replica_count": stats["replica_count"],
+        "speaker_count": stats["speaker_count"],
+        "avg_confidence": stats["avg_confidence"],
+        "duration_seconds": stats["total_duration_seconds"],
     }
 
 
@@ -83,10 +174,11 @@ def get_studio_dashboard(
 ):
     """
     §14.2.1 — Vue synthétique du dashboard pour un studio.
+    Enrichi §16.1 + US-053 : statistiques d'usage/performance par projet
 
     Retourne :
-      - projects : liste des projets du studio (avec statut, pipeline, dernière modif)
-      - indicators : indicateurs studio (temps moyen, volume, quota, répartition statuts)
+      - projects : liste des projets du studio (avec statut, pipeline, dernière modif, stats)
+      - indicators : indicateurs studio (temps moyen, volume, quota, répartition statuts, durée totale, etc.)
       - filters : statuts disponibles pour le filtrage
     """
     studio = db.query(Studio).filter(Studio.id == studio_id).first()
@@ -151,7 +243,6 @@ def get_studio_dashboard(
         durations = []
         for j in completed_jobs:
             if j.updated_at:
-                # PipelineJob doesn't have created_at — estimate from project creation
                 proj = next((p for p in projects if p.id == j.project_id), None)
                 if proj and proj.created_at:
                     try:
@@ -169,23 +260,42 @@ def get_studio_dashboard(
     quotas = studio.quotas or {}
     quota_limit_minutes = quotas.get("ai_minutes_limit", 600)  # défaut 10h/mois
     quota_used_minutes = quotas.get("ai_minutes_used", 0)
-    # Calculer l'usage réel si disponible (sinon estimer via les jobs)
     if not quotas.get("ai_minutes_used"):
-        # Estimation : chaque job completed ≈ durée média du projet
-        # Pour l'instant on utilise la valeur stockée ou 0
         total_used = 0
         for j in completed_jobs:
             proj = next((p for p in projects if p.id == j.project_id), None)
             if proj:
-                # Estimer la durée média (via media asset)
                 media = db.query(MediaAsset).filter(MediaAsset.project_id == proj.id).first()
                 if media:
-                    # On ne connaît pas la durée ici, on estime 20 min par projet
                     total_used += 20
         quota_used_minutes = total_used
 
     quota_remaining_minutes = max(0, quota_limit_minutes - quota_used_minutes)
     quota_percent_used = round((quota_used_minutes / quota_limit_minutes) * 100, 1) if quota_limit_minutes > 0 else 0
+
+    # ── Indicateurs enrichis US-053 ──
+    # Totaux
+    total_replicas = sum(p["stats"]["replica_count"] for p in project_list) if project_list else 0
+    total_speakers = sum(p["stats"]["speaker_count"] for p in project_list) if project_list else 0
+    total_duration_seconds = sum(p["stats"]["total_duration_seconds"] for p in project_list) if project_list else 0
+    total_storage_mb = sum(p["stats"]["storage_mb"] for p in project_list) if project_list else 0
+    total_words = sum(p["stats"]["word_count"] for p in project_list) if project_list else 0
+    total_transcripts = sum(p["stats"]["transcript_segment_count"] for p in project_list) if project_list else 0
+
+    # Confiance moyenne globale
+    all_confidences = []
+    for p in projects:
+        medias = db.query(MediaAsset).filter(MediaAsset.project_id == p.id).all()
+        mids = [m.id for m in medias]
+        if mids:
+            reps = db.query(Replica).filter(Replica.media_id.in_(mids)).all()
+            for r in reps:
+                if r.confidence_score is not None:
+                    all_confidences.append(float(r.confidence_score))
+    avg_confidence_global = round(sum(all_confidences) / len(all_confidences), 3) if all_confidences else None
+
+    # Top projets par activité (dernière mise à jour)
+    top_projects = sorted(project_list, key=lambda x: x.get("updated_at") or "", reverse=True)[:5]
 
     indicators = {
         "total_projects": len(projects),
@@ -198,6 +308,17 @@ def get_studio_dashboard(
             "remaining_minutes": quota_remaining_minutes,
             "percent_used": quota_percent_used,
         },
+        # Enrichis US-053
+        "total_replicas": total_replicas,
+        "total_speakers": total_speakers,
+        "total_duration_seconds": round(total_duration_seconds, 2),
+        "total_duration_minutes": round(total_duration_seconds / 60, 2) if total_duration_seconds else 0.0,
+        "total_duration_hours": round(total_duration_seconds / 3600, 2) if total_duration_seconds else 0.0,
+        "total_storage_mb": round(total_storage_mb, 2),
+        "total_words": total_words,
+        "total_transcripts": total_transcripts,
+        "avg_confidence_global": avg_confidence_global,
+        "top_projects": [{"id": p["id"], "title": p["title"], "updated_at": p["updated_at"], "status": p["status"]} for p in top_projects],
     }
 
     # ── Filtres disponibles ──

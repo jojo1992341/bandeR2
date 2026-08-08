@@ -365,4 +365,27 @@ export const api = {
     if (!res.ok) throw new Error(`generateRythmo failed ${res.status}: ${await res.text()}`);
     return res.json();
   },
+
+  // ==================== Search §16.1 ====================
+
+  async searchStudio(studioId, query, { limit = 20, offset = 0, includeReplicas = true, includeTranscripts = true } = {}) {
+    const params = new URLSearchParams({ q: query, limit: String(limit), offset: String(offset), include_replicas: String(includeReplicas), include_transcripts: String(includeTranscripts) });
+    const res = await fetch(`/api/v1/studios/${studioId}/search?${params.toString()}`);
+    if (!res.ok) throw new Error(`searchStudio failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async searchStudioSuggest(studioId, query, limit = 5) {
+    const params = new URLSearchParams({ q: query, limit: String(limit) });
+    const res = await fetch(`/api/v1/studios/${studioId}/search/suggest?${params.toString()}`);
+    if (!res.ok) throw new Error(`searchStudioSuggest failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  // Dashboard enrichi §16.1 US-053
+  async getStudioDashboardEnriched(studioId) {
+    const res = await fetch(`/api/v1/studios/${studioId}/dashboard`);
+    if (!res.ok) throw new Error(`getStudioDashboardEnriched failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
 };
