@@ -63,6 +63,21 @@ def pipeline_transcribe_diarize(self, pipeline_result: dict):
         media_path=first_track_path, media_id=str(media_id)
     )
     d_res = diarize_speakers.run(media_path=first_track_path)
+    try:
+        import uuid
+        from app.core.database import SessionLocal
+        from app.services.silence_service import SilenceService
+
+        db = SessionLocal()
+        try:
+            svc = SilenceService(db)
+            svc.detect_and_persist_silences(
+                uuid.UUID(str(media_id)), first_track_path
+            )
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"Silence detection in pipeline warning: {e}")
     return {
         **pipeline_result,
         "transcription": t_res,

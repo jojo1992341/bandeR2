@@ -56,4 +56,18 @@ describe('TimelineView §17.3 Performance (recalcul incrémental au scroll/zoom 
     const didScrollAgain = timeline.scroll(5000);
     expect(didScrollAgain).toBe(false);
   });
+
+  it("affiche les événements de silence classifiés comme points d'appui visuels (§8.2.4, §9.2)", () => {
+    const timeline = new TimelineView('timeline-container');
+    const silences = [
+      { id: 's-1', event_type: 'respiration_audible', start_ms: 1000, end_ms: 1250 },
+      { id: 's-2', event_type: 'pause_syntaxique', start_ms: 3000, end_ms: 3450 },
+      { id: 's-3', event_type: 'hesitation', start_ms: 5000, end_ms: 5150 },
+      { id: 's-4', event_type: 'coupe_technique', start_ms: 8000, end_ms: 8400 },
+    ];
+    timeline.setSilenceEvents(silences);
+    expect(timeline.silences.length).toBe(4);
+    const m = timeline.draw();
+    expect(m.skipped).toBe(false);
+  });
 });

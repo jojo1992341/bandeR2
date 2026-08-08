@@ -22,6 +22,7 @@ export class TimelineView {
     this.scrollMs = options.scrollMs || 0;
     this.zoomLevel = options.zoomLevel || 1.0;
     this.replicas = [];
+    this.silences = [];
 
     this.isDirty = true;
     this.lastScrollMs = null;
@@ -41,6 +42,12 @@ export class TimelineView {
    */
   setReplicas(replicas = []) {
     this.replicas = replicas.slice().sort((a, b) => a.start_ms - b.start_ms);
+    this.isDirty = true;
+    this.draw();
+  }
+
+  setSilenceEvents(silences = []) {
+    this.silences = silences.slice().sort((a, b) => a.start_ms - b.start_ms);
     this.isDirty = true;
     this.draw();
   }
@@ -170,6 +177,64 @@ export class TimelineView {
         ctx.font = '10px system-ui, -apple-system, sans-serif';
         const secs = Math.round(tick / 1000);
         ctx.fillText(`${secs}s`, x + 2, 12);
+      }
+
+      // Dessin des événements de silence comme points d'appui visuels (§8.2.4, §9.2)
+      for (let i = 0; i < this.silences.length; i++) {
+        const s = this.silences[i];
+        if (s.end_ms < startMs || s.start_ms > endMs) continue;
+        const sx0 = Math.max(
+          0,
+          ((s.start_ms - startMs) / windowDurationMs) * w
+        );
+        const sx1 = Math.min(
+          w,
+          ((s.end_ms - startMs) / windowDurationMs) * w
+        );
+        const sw = Math.max(2, sx1 - sx0);
+
+        ctx.save();
+        if (
+          s.event_type === 'respiration_audible' ||
+          s.event_type === 'respiration'
+        ) {
+          ctx.strokeStyle = '#06b6d4';
+          ctx.setLineDash([2, 2]);
+          ctx.beginPath();
+          ctx.moveTo(sx0, 15);
+          ctx.lineTo(sx0, h);
+          ctx.stroke();
+          ctx.fillStyle = '#06b6d4';
+          ctx.font = '9px system-ui';
+          ctx.fillText('🫁 RESP', sx0 + 2, 24);
+        } else if (s.event_type === 'pause_syntaxique') {
+          ctx.strokeStyle = '#10b981';
+          ctx.setLineDash([4, 2]);
+          ctx.beginPath();
+          ctx.moveTo(sx0, 15);
+          ctx.lineTo(sx0, h);
+          ctx.stroke();
+          ctx.fillStyle = '#10b981';
+          ctx.font = '9px system-ui';
+          ctx.fillText('PAUSE >300ms', sx0 + 2, 24);
+        } else if (s.event_type === 'hesitation') {
+          ctx.strokeStyle = '#f59e0b';
+          ctx.setLineDash([2, 2]);
+          ctx.beginPath();
+          ctx.moveTo(sx0, 15);
+          ctx.lineTo(sx0, h);
+          ctx.stroke();
+          ctx.fillStyle = '#f59e0b';
+          ctx.font = '9px system-ui';
+          ctx.fillText('HÉSIT <200ms', sx0 + 2, 24);
+        } else if (s.event_type === 'coupe_technique') {
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
+          ctx.fillRect(sx0, 15, sw, h - 15);
+          ctx.fillStyle = '#ef4444';
+          ctx.font = '9px system-ui';
+          ctx.fillText('COUPE TECH 0 RMS', sx0 + 2, 24);
+        }
+        ctx.restore();
       }
 
       for (let i = 0; i < visibleReplicas.length; i++) {
