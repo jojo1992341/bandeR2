@@ -27,6 +27,7 @@ from app.api.v1 import (
     feedback,
     words,
     sso,
+    crdt,
 )
 from app.core.config import get_settings
 from app.core.logging import logger
@@ -106,5 +107,7 @@ app.include_router(search.router, prefix="/api/v1", tags=["search"])
 app.include_router(feedback.router, prefix="/api/v1", tags=["feedback"])
 app.include_router(sso.router, prefix="/api/v1", tags=["sso"])
 app.include_router(sso.router, tags=["sso-alt"])
+app.include_router(crdt.router, prefix="/api/v1", tags=["crdt"])
+app.include_router(crdt.router, tags=["crdt-alt"])
 app.include_router(words.router, prefix="/api/v1", tags=["words"])
 app.include_router(words.router, tags=["words-alt"])
