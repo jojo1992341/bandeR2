@@ -92,6 +92,9 @@ def _serialize_replica(r: Replica) -> dict:
         "is_manually_edited": r.is_manually_edited,
         "breath_marker": r.breath_marker,
         "version": r.version,  # §16.4 — optimistic lock version
+        "syllable_count": getattr(r, "syllable_count", 0) or 0,
+        "speech_rate": float(getattr(r, "speech_rate", 0.0) or 0.0),
+        "speech_rate_alert": getattr(r, "speech_rate_alert", None),
     }
 
 @router.get("/replicas/{replica_id}", response_model=dict)
@@ -184,6 +187,14 @@ async def patch_replica(
             # Nettoyer les codes désactivés explicitement à False si on veut les retirer ?
             # On garde False pour traçabilité ; l'éditeur interprète False comme désactivé
             replica.typo_codes = merged
+    from app.services.speech_rate_service import evaluate_speech_rate
+    rate_eval = evaluate_speech_rate(
+        replica.text, replica.end_ms - replica.start_ms, "fr"
+    )
+    replica.syllable_count = rate_eval["syllable_count"]
+    replica.speech_rate = rate_eval["speech_rate"]
+    replica.speech_rate_alert = rate_eval if rate_eval["is_alert"] else None
+
     replica.is_manually_edited = True
     replica.version = (replica.version or 0) + 1  # §16.4 — incrémenter le version optimistic lock
     db.commit()
