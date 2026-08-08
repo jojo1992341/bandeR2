@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.core.database import get_db
-from app.models import Base, Studio, Project, MediaAsset, Replica, RythmoVersion, Export
+from app.models import Base, Studio, Project, MediaAsset, Replica, RythmoVersion, Export, StudioMembership, User, StudioInvitation
 
 # Utiliser SQLite in-memory pour l'intégration sans dépendance Postgres
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -21,11 +21,15 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 # Créer le schéma une fois
 Base.metadata.create_all(bind=engine)
-# S'assurer que les nouvelles tables (RythmoVersion, Export) existent même si le moteur a été créé avant leur ajout
+# S'assurer que les nouvelles tables existent même si le moteur a été créé avant leur ajout
 try:
-    from app.models import RythmoVersion, Export
+    from app.models import RythmoVersion, Export, StudioInvitation, StudioMembership, User
     RythmoVersion.__table__.create(bind=engine, checkfirst=True)
     Export.__table__.create(bind=engine, checkfirst=True)
+    StudioInvitation.__table__.create(bind=engine, checkfirst=True)
+    # StudioMembership et User déjà dans le schéma initial, mais on s'assure
+    StudioMembership.__table__.create(bind=engine, checkfirst=True)
+    User.__table__.create(bind=engine, checkfirst=True)
 except:
     pass
 
@@ -41,18 +45,20 @@ client = TestClient(app)
 
 def _clean_db(db):
     # Supprimer dans l'ordre pour respecter FK
-    try:
-        db.query(Export).delete()
-    except:
-        pass
-    try:
-        db.query(RythmoVersion).delete()
-    except:
-        pass
+    for model in [Export, RythmoVersion, StudioInvitation]:
+        try:
+            db.query(model).delete()
+        except:
+            pass
     db.query(Replica).delete()
     db.query(MediaAsset).delete()
     db.query(Project).delete()
+    try:
+        db.query(StudioMembership).delete()
+    except:
+        pass
     db.query(Studio).delete()
+    # Ne pas supprimer tous les Users ici pour éviter de casser d'autres tests, mais on le fait dans les tests spécifiques
     db.commit()
 
 def _setup_fixture():
