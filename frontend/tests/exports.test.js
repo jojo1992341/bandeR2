@@ -35,8 +35,11 @@ describe('ExportsPanel PDF calligraphié §A.2 / §17.1', () => {
   it('affiche le panneau avec bouton Export PDF', async () => {
     const panel = new ExportsPanel('test-exports', projectId);
     panel.mount();
-    expect(container.textContent).toContain('Export PDF calligraphié');
+    expect(container.textContent).toContain('Exports');
+    expect(container.textContent).toContain('PDF');
     expect(container.querySelector('[data-testid="export-pdf-btn"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="export-srt-btn"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="export-vtt-btn"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="export-status"]')).not.toBeNull();
   });
 
