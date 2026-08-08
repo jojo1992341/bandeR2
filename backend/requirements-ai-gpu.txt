@@ -1,0 +1,76 @@
+# =============================================================================
+# RythmoAI Backend - Dépendances IA GPU/CUDA (§8.2, §18.4 CDC)
+# =============================================================================
+# Moteurs d'Intelligence Artificielle avec accélération GPU (CUDA)
+# Installation complémentaire aux requirements.txt + requirements-ai-cpu.txt
+#
+# Prérequis:
+# - Carte GPU NVIDIA avec pilote CUDA 11.8+ installé
+# - CUDA Toolkit compatible (voir https://pytorch.org/get-started/locally/)
+#
+# Utilisation:
+#   pip install -r requirements.txt
+#   pip install -r requirements-ai-cpu.txt
+#   pip install -r requirements-ai-gpu.txt
+#
+# Ce profil active:
+# - Transcription Whisper (GPU CUDA)
+# - Détection émotionnelle wav2vec2 (GPU)
+# - VAD Silero optimisé (GPU)
+# - Séparation de sources Demucs (GPU)
+# - Alignement WhisperX (GPU)
+# - Diarisation pyannote.audio (GPU)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Deep Learning GPU - CUDA 11.8 (§8.2)
+# -----------------------------------------------------------------------------
+# Remplace le package CPU par la version CUDA
+--extra-index-url https://download.pytorch.org/whl/cu118
+torch>=2.2.0
+torchaudio>=2.2.0
+
+# -----------------------------------------------------------------------------
+# Transcription vocale GPU (§8.2.1)
+# -----------------------------------------------------------------------------
+# whisper utilise déjà torch, pas de dépendance supplémentaire
+openai-whisper>=20231117
+
+# -----------------------------------------------------------------------------
+# Détection émotionnelle GPU (§8.2.5)
+# -----------------------------------------------------------------------------
+# transformers utilise déjà torch, pas de dépendance supplémentaire
+transformers>=4.35.0
+
+# -----------------------------------------------------------------------------
+# VAD GPU optimisé (§8.2.3)
+# -----------------------------------------------------------------------------
+# silero-vad utilise déjà torch, pas de dépendance supplémentaire
+silero-vad>=5.1.0
+
+# -----------------------------------------------------------------------------
+# Séparation de sources Demucs GPU (§12.1, GPU)
+# -----------------------------------------------------------------------------
+demucs>=4.0.0
+# demucs nécessite torch avec CUDA pour les performances GPU
+# BACKEND=auto détectera automatiquement le GPU
+
+# -----------------------------------------------------------------------------
+# Alignement WhisperX GPU (§8.2.7, GPU)
+# -----------------------------------------------------------------------------
+whisperx>=2.3.0
+# whisperx bénéficie du GPU pour l'alignement forcé
+
+# -----------------------------------------------------------------------------
+# Diarisation GPU (§8.2.4, GPU)
+# -----------------------------------------------------------------------------
+pyannote.audio>=3.0.0
+# Avec GPU, la diarisation est beaucoup plus rapide
+
+# -----------------------------------------------------------------------------
+# Configuration GPU
+# -----------------------------------------------------------------------------
+# Les variables d'environnement suivantes peuvent être définies:
+#   CUDA_VISIBLE_DEVICES=0      # GPU à utiliser (défaut: tous)
+#   PYTHONUNBUFFERED=1         # Sortie non bufferisée pour logs
+#   TORCH_CUDA_ARCH_LIST=...   # Architectures CUDA cibles

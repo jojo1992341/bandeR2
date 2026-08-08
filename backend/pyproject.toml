@@ -1,0 +1,162 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rythmoai-backend"
+version = "2.0.0"
+description = "Backend RythmoAI - Plateforme de localisation et synchronisation labiale (§6.1 CDC)"
+readme = "README.md"
+license = {text = "Propriétaire"}
+requires-python = ">=3.10"
+authors = [
+    {name = "RythmoAI Team", email = "dev@rythmoai.local"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.0.0",
+    "email-validator>=2.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",
+    "aiosqlite>=0.19.0",
+    "alembic>=1.14.0",
+    "python-dotenv>=1.0.0",
+    "argon2-cffi>=23.1.0",
+    "PyJWT>=2.8.0",
+    "python-multipart>=0.0.9",
+    "pyotp>=2.10.0",
+    "boto3>=1.34.0",
+    "reportlab>=4.0.0",
+    "requests>=2.31.0",
+    "pyphen>=0.14.0",
+    "numpy>=1.26.0",
+    "scipy>=1.11.0",
+    "celery>=5.3.0",
+    "redis>=5.0.0",
+]
+
+# Groupes optionnels (installe avec: pip install .[groupe])
+[project.optional-dependencies]
+# Profil CPU complet avec IA
+cpu = [
+    "torch>=2.2.0",
+    "torchaudio>=2.2.0",
+    "openai-whisper>=20231117",
+    "transformers>=4.35.0",
+    "librosa>=0.10.0",
+    "silero-vad>=5.1.0",
+    "spacy>=3.7.0",
+    "fr-core-news-sm>=3.7.0",
+    "phonemizer>=2.2.0",
+    "g2p-en>=2.1.0",
+    "pyannote.audio>=3.0.0",
+    "soundfile>=0.12.0",
+]
+# Profil GPU/CUDA avec IA optimisée
+gpu = [
+    "torch>=2.2.0",
+    "torchaudio>=2.2.0",
+    "demucs>=4.0.0",
+    "whisperx>=2.3.0",
+    "openai-whisper>=20231117",
+    "transformers>=4.35.0",
+    "librosa>=0.10.0",
+    "silero-vad>=5.1.0",
+    "pyannote.audio>=3.0.0",
+    "soundfile>=0.12.0",
+]
+# Outils de développement
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.2.0",
+    "httpx>=0.26.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+    "types-requests>=2.31.0",
+    "types-python-dateutil>=2.8.0",
+    "pip-audit>=2.6.0",
+    "rich>=13.0.0",
+    "pre-commit>=3.5.0",
+]
+# Tout (runtime + IA CPU + dev)
+all = [
+    "rythmoai-backend[cpu,dev]",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+markers = [
+    "slow: tests lents",
+    "integration: tests d'intégration PostgreSQL",
+    "unit: tests unitaires SQLite",
+    "asyncio: tests asynchrones",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+omit = [
+    "app/ai/*_engine.py",
+    "app/ai/*diarizer.py",
+    "app/ai/*aligner.py",
+]
+
+[tool.rythmoai]
+# Configuration spécifique au projet RythmoAI
+default_db_url = "postgresql+asyncpg://postgres:postgres@localhost:5432/rythmoai"
+test_db_url = "sqlite+aiosqlite:///:memory:"
