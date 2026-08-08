@@ -17,6 +17,7 @@ from app.api.v1 import (
     project_lifecycle,
     dashboard,
     audit,
+    backups,
 )
 from app.core.config import get_settings
 from app.core.logging import logger
@@ -85,3 +86,4 @@ app.include_router(
 app.include_router(dashboard.router, prefix="/api/v1", tags=["dashboard"])
 app.include_router(comments.router, prefix="/api/v1", tags=["comments"])
 app.include_router(audit.router, tags=["audit"])
+app.include_router(backups.router, tags=["backups"])
