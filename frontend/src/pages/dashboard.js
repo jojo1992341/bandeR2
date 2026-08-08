@@ -4,6 +4,7 @@ import { api } from '../services/api.js';
 import { AutoSave } from '../services/autosave.js';
 import { VersionsPanel } from '../components/versions_panel.js';
 import { ExportsPanel } from '../components/exports_panel.js';
+import { CommentsPanel } from '../components/comments_panel.js';
 
 // Initialiser les raccourcis d'édition §14.4 (Ctrl+Maj+S / Ctrl+Maj+F) + undo/redo
 initReplicaEditor(store, api);
@@ -57,6 +58,52 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initExportsPanel);
 } else {
   initExportsPanel();
+}
+
+// Panneau latéral contextuel §14.2.4 — Fil de commentaires
+let commentsPanel = null;
+function initCommentsPanel() {
+  let container = document.getElementById('comments-panel');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'comments-panel';
+    container.setAttribute('data-testid', 'comments-panel');
+    // Créer une mise en page éditeur avec zone principale + panneau latéral
+    const app = document.getElementById('app');
+    if (app) {
+      // Créer une structure si elle n'existe pas
+      let editorLayout = document.getElementById('editor-layout');
+      if (!editorLayout) {
+        editorLayout = document.createElement('div');
+        editorLayout.id = 'editor-layout';
+        editorLayout.style.cssText = 'display:grid; grid-template-columns: 2fr 1fr; gap:1rem; margin-top:1rem;';
+        // Déplacer la replica-list dans la zone principale
+        const replicaList = document.getElementById('replica-list');
+        const mainArea = document.createElement('div');
+        mainArea.id = 'editor-main';
+        if (replicaList) mainArea.appendChild(replicaList);
+        const sidePanel = document.createElement('div');
+        sidePanel.id = 'editor-side';
+        sidePanel.appendChild(container);
+        editorLayout.appendChild(mainArea);
+        editorLayout.appendChild(sidePanel);
+        app.appendChild(editorLayout);
+      } else {
+        const side = document.getElementById('editor-side') || editorLayout;
+        side.appendChild(container);
+      }
+    } else {
+      document.body.appendChild(container);
+    }
+  }
+  commentsPanel = new CommentsPanel('comments-panel', store);
+  commentsPanel.mount();
+  if (typeof window !== 'undefined') window.commentsPanel = commentsPanel;
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initCommentsPanel);
+} else {
+  initCommentsPanel();
 }
 
 // Exposer pour debug / tests e2e

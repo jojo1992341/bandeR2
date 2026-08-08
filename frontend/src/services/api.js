@@ -112,4 +112,30 @@ export const api = {
     if (!res.ok) throw new Error(`downloadExport failed ${res.status}`);
     return res.blob();
   },
+
+  // ==================== Comments §10.2, §14.2.4 ====================
+
+  async listComments(replicaId) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/comments`);
+    if (!res.ok) throw new Error(`listComments failed ${res.status}`);
+    return res.json();
+  },
+
+  async createComment(replicaId, content) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    if (!res.ok) throw new Error(`createComment failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async deleteComment(commentId) {
+    const res = await fetch(`/api/v1/comments/${commentId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(`deleteComment failed ${res.status}`);
+    return res.json();
+  },
 };

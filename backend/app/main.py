@@ -18,16 +18,19 @@ async def health():
 
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth-api"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(projects.router, prefix="/api/v1/projects", tags=["projects"])
 app.include_router(studios.router, prefix="/api/v1/studios", tags=["studios"])
+app.include_router(studios.router, prefix="/studios", tags=["studios-alt"])
 app.include_router(
     transcripts.router, prefix="/api/v1/transcripts", tags=["transcripts"]
 )
 app.include_router(rythmo.router, prefix="/api/v1", tags=["rythmo"])
 app.include_router(exports.router, prefix="/api/v1", tags=["exports"])
-from app.api.v1 import media, pipeline_ws, speakers, replicas
+from app.api.v1 import media, pipeline_ws, speakers, replicas, comments
 app.include_router(media.router, tags=["media"])
 app.include_router(pipeline_ws.router, tags=["pipeline"])
 app.include_router(speakers.router, tags=["speakers"])
 app.include_router(replicas.router, prefix="/api/v1", tags=["replicas"])
+app.include_router(comments.router, prefix="/api/v1", tags=["comments"])

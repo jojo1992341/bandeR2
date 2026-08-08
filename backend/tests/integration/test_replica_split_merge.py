@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.core.database import get_db
-from app.models import Base, Studio, Project, MediaAsset, Replica, RythmoVersion, Export, StudioMembership, User, StudioInvitation
+from app.models import Base, Studio, Project, MediaAsset, Replica, RythmoVersion, Export, StudioMembership, User, StudioInvitation, Comment
 
 # Utiliser SQLite in-memory pour l'intégration sans dépendance Postgres
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -23,10 +23,11 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 Base.metadata.create_all(bind=engine)
 # S'assurer que les nouvelles tables existent même si le moteur a été créé avant leur ajout
 try:
-    from app.models import RythmoVersion, Export, StudioInvitation, StudioMembership, User
+    from app.models import RythmoVersion, Export, StudioInvitation, StudioMembership, User, Comment
     RythmoVersion.__table__.create(bind=engine, checkfirst=True)
     Export.__table__.create(bind=engine, checkfirst=True)
     StudioInvitation.__table__.create(bind=engine, checkfirst=True)
+    Comment.__table__.create(bind=engine, checkfirst=True)
     # StudioMembership et User déjà dans le schéma initial, mais on s'assure
     StudioMembership.__table__.create(bind=engine, checkfirst=True)
     User.__table__.create(bind=engine, checkfirst=True)
@@ -45,7 +46,7 @@ client = TestClient(app)
 
 def _clean_db(db):
     # Supprimer dans l'ordre pour respecter FK
-    for model in [Export, RythmoVersion, StudioInvitation]:
+    for model in [Comment, Export, RythmoVersion, StudioInvitation]:
         try:
             db.query(model).delete()
         except:

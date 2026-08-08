@@ -1,8 +1,11 @@
 import uuid
 from sqlalchemy import String, Integer, Numeric, DateTime, func, ForeignKey, Text, JSON, Boolean
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
+from typing import List, TYPE_CHECKING
+if TYPE_CHECKING:
+    from .comment import Comment
 
 class Replica(Base):
     __tablename__ = "replicas"
@@ -19,3 +22,5 @@ class Replica(Base):
     breath_marker: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    comments: Mapped[List["Comment"]] = relationship(back_populates="replica", cascade="all, delete-orphan")
