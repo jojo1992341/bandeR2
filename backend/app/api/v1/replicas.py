@@ -5,7 +5,7 @@ from sqlalchemy import and_
 from typing import Optional, List
 import uuid
 from app.core.database import get_db
-from app.models import Replica, ReplicaHistory, MediaAsset
+from app.models import Replica, ReplicaHistory, MediaAsset, MediaAsset as _Media, Project as _Project
 
 router = APIRouter()
 
@@ -16,6 +16,7 @@ class ReplicaPatchIn(BaseModel):
     speaker_id: Optional[uuid.UUID] = None
     typo_codes: Optional[dict] = None
     overlap_allowed: bool = False
+    version: Optional[int] = None  # §16.4 — optimistic lock: client must send current version
 
 # Codes typographiques métier §2.4
 ALLOWED_TYPO_CODES = {
@@ -89,6 +90,7 @@ def _serialize_replica(r: Replica) -> dict:
         "confidence_score": float(r.confidence_score) if r.confidence_score is not None else None,
         "is_manually_edited": r.is_manually_edited,
         "breath_marker": r.breath_marker,
+        "version": r.version,  # §16.4 — optimistic lock version
     }
 
 @router.get("/replicas/{replica_id}", response_model=dict)
@@ -103,15 +105,34 @@ def get_replica(
     return _serialize_replica(replica)
 
 @router.patch("/replicas/{replica_id}", response_model=dict)
-def patch_replica(
+async def patch_replica(
     replica_id: uuid.UUID,
     data: ReplicaPatchIn,
     db: Session = Depends(get_db),
 ):
+    """
+    PATCH /replicas/{id} §16.4 — Édition avec verrouillage optimiste.
+
+    Le client DOIT envoyer `version` (la version qu'il a lue).
+    Si la version en base est différente → 409 Conflict (écriture destructive refusée).
+    """
     # Anti-IDOR / existence
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
     if not replica:
         raise HTTPException(status_code=404, detail="Réplique non trouvée")
+
+    # §16.4 — Verrouillage optimiste : vérifier version
+    if data.version is not None and replica.version != data.version:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "version_conflict",
+                "message": "Conflit de version : cette réplique a été modifiée par un autre utilisateur.",
+                "current_version": replica.version,
+                "sent_version": data.version,
+            },
+        )
+
     # Validation start < end
     new_start = data.start_ms if data.start_ms is not None else replica.start_ms
     new_end = data.end_ms if data.end_ms is not None else replica.end_ms
@@ -160,14 +181,52 @@ def patch_replica(
             # On garde False pour traçabilité ; l'éditeur interprète False comme désactivé
             replica.typo_codes = merged
     replica.is_manually_edited = True
+    replica.version = (replica.version or 0) + 1  # §16.4 — incrémenter le version optimistic lock
     db.commit()
     db.refresh(replica)
+
+    # §16.4 — Diffuser la mise à jour via WebSocket
+    try:
+        from app.services.replica_lock_manager import lock_manager
+        # Déduire le project_id via media
+        media = db.query(_Media).filter(_Media.id == replica.media_id).first()
+        if media:
+            changes = {}
+            if data.text is not None:
+                changes["text"] = data.text
+            if data.start_ms is not None:
+                changes["start_ms"] = data.start_ms
+            if data.end_ms is not None:
+                changes["end_ms"] = data.end_ms
+            if data.speaker_id is not None:
+                changes["speaker_id"] = str(data.speaker_id)
+            if normalized_typo is not None:
+                changes["typo_codes"] = normalized_typo
+            # Broadcast asynchone — on ne bloque pas la réponse REST
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.ensure_future(lock_manager.broadcast_replica_updated(
+                        project_id=media.project_id,
+                        replica_id=replica.id,
+                        user_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),  # anonyme si pas d'auth
+                        user_name="system",
+                        version=replica.version,
+                        changes=changes,
+                    ))
+            except RuntimeError:
+                pass
+    except ImportError:
+        pass
+
     # Retour enrichi pour vérification immédiate des typo_codes
     return {
         "id": str(replica.id),
         "status": "updated",
         "is_manually_edited": True,
         "typo_codes": replica.typo_codes,
+        "version": replica.version,  # §16.4 — nouveau version pour le client
         "replica": _serialize_replica(replica),
     }
 

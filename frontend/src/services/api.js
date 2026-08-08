@@ -43,7 +43,51 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (res.status === 409) {
+      // §16.4 — optimistic lock conflict
+      const err = await res.json().catch(() => ({}));
+      const conflictErr = new Error(err.detail?.message || 'Conflit de version');
+      conflictErr.status = 409;
+      conflictErr.detail = err.detail;
+      throw conflictErr;
+    }
     if (!res.ok) throw new Error(`patch failed ${res.status}`);
+    return res.json();
+  },
+
+  // ==================== Replica Locks §16.4 ====================
+
+  async acquireReplicaLock(replicaId, userId, userName) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/lock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, user_name: userName }),
+    });
+    if (!res.ok) throw new Error(`acquire lock failed ${res.status}`);
+    return res.json();
+  },
+
+  async releaseReplicaLock(replicaId, userId) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/lock?user_id=${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(`release lock failed ${res.status}`);
+    return res.json();
+  },
+
+  async replicaLockHeartbeat(replicaId, userId) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId }),
+    });
+    if (!res.ok) throw new Error(`heartbeat failed ${res.status}`);
+    return res.json();
+  },
+
+  async getReplicaLockStatus(replicaId) {
+    const res = await fetch(`/api/v1/replicas/${replicaId}/lock`);
+    if (!res.ok) throw new Error(`get lock status failed ${res.status}`);
     return res.json();
   },
 

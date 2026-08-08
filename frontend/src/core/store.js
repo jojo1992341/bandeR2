@@ -59,6 +59,8 @@ export class RythmoStore extends EventTarget {
     this.undoStack = [];
     this.redoStack = [];
     this.syncStatus = 'idle';
+    // §16.4 — replica locks: { replicaId: { user_id, user_name } }
+    this.replicaLocks = {};
   }
 
   setProject(p) {
@@ -294,6 +296,33 @@ export class RythmoStore extends EventTarget {
   setSyncStatus(status) {
     this.syncStatus = status;
     this._dispatch('syncStatus');
+  }
+
+  // §16.4 — Replica lock state management
+  setReplicaLocks(locks) {
+    this.replicaLocks = locks || {};
+    this._dispatch('replicaLocks');
+  }
+
+  updateReplicaLock(replicaId, lockInfo) {
+    if (lockInfo) {
+      this.replicaLocks = { ...this.replicaLocks, [replicaId]: lockInfo };
+    } else {
+      const next = { ...this.replicaLocks };
+      delete next[replicaId];
+      this.replicaLocks = next;
+    }
+    this._dispatch('replicaLocks');
+  }
+
+  isReplicaLocked(replicaId) {
+    return replicaId in this.replicaLocks;
+  }
+
+  getReplicaLockMessage(replicaId) {
+    const info = this.replicaLocks[replicaId];
+    if (!info) return null;
+    return `${info.user_name} édite cette réplique`;
   }
 
   _dispatch(type) {

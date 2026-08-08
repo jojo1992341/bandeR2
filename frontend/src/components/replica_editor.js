@@ -191,9 +191,9 @@ export function handleTypoEvent(event, storeInstance = defaultStore, apiInstance
 }
 
 /**
- * Gère l'édition de texte via double-clic §7.3
+ * Gère l'édition de texte via double-clic §7.3 + §16.4 (optimistic lock)
  */
-export async function handleEditEvent(event, storeInstance = defaultStore, apiInstance = defaultApi) {
+export async function handleEditEvent(event, storeInstance = defaultStore, apiInstance = defaultApi, lockManager = null) {
   const detail = event.detail || {};
   const id = detail.id;
   const text = detail.text;
@@ -202,13 +202,50 @@ export async function handleEditEvent(event, storeInstance = defaultStore, apiIn
   const replica = storeInstance.replicas.find(r => r.id === id);
   if (!replica) return;
   if (replica.text === text) return;
+
+  // §16.4 — Acquire lock before editing
+  if (lockManager && !lockManager.isLockedByMe(id)) {
+    if (lockManager.isLocked(id)) {
+      // Someone else is editing — show indicator, don't proceed
+      const msg = lockManager.getLockMessage(id);
+      if (typeof console !== 'undefined') console.warn('Replica locked:', msg);
+      storeInstance.updateReplicaLock(id, lockManager.getLockInfo(id));
+      return;
+    }
+    try {
+      const result = await lockManager.acquireLock(id);
+      if (!result.acquired) {
+        // Lock denied — another user holds it
+        storeInstance.updateReplicaLock(id, result.locked_by);
+        return;
+      }
+    } catch (e) {
+      // Lock acquisition failed — proceed without lock (graceful degradation)
+      if (typeof console !== 'undefined') console.warn('Lock acquisition failed, proceeding without lock:', e);
+    }
+  }
+
   // Optimistic via store (undoable)
   storeInstance.editReplicaText(id, text);
-  // Persist
+  // Persist with version for optimistic lock §16.4
   try {
-    await apiInstance.patchReplica(id, { text });
+    const payload = { text };
+    if (replica.version !== undefined) payload.version = replica.version;
+    await apiInstance.patchReplica(id, payload);
   } catch (e) {
-    // En cas d'erreur, on pourrait revert, mais on garde l'optimistic
+    // §16.4 — Handle 409 Conflict (version mismatch)
+    if (e.status === 409) {
+      // Revert optimistic update
+      storeInstance.undo();
+      // Emit event for UI to show conflict message
+      if (typeof document !== 'undefined') {
+        document.dispatchEvent(new CustomEvent('replica:conflict', {
+          detail: { replicaId: id, message: e.message, serverDetail: e.detail },
+        }));
+      }
+      return;
+    }
+    // Other errors — keep optimistic (could revert but we keep it)
     console.error('patch text failed', e);
   }
   // Mettre à jour DOM

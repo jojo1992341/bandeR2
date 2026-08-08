@@ -1,2 +1,57 @@
 body { font-family: system-ui, sans-serif; margin: 0; padding: 2rem; background: #0b0c15; color: #e8e8ec; }
 #replica-list { background: #16182e; border-radius: 8px; padding: 1rem; }
+
+/* §16.4 — Replica lock indicator */
+.replica-lock-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  pointer-events: none;
+  animation: replica-lock-pulse 2s ease-in-out infinite;
+}
+
+.replica-lock-indicator--locked {
+  background: rgba(255, 170, 51, 0.15);
+  color: #ffaa33;
+  border: 1px solid rgba(255, 170, 51, 0.3);
+}
+
+.replica-lock-indicator--conflict {
+  background: rgba(255, 77, 77, 0.15);
+  color: #ff4d4d;
+  border: 1px solid rgba(255, 77, 77, 0.3);
+  animation: none;
+}
+
+.replica-lock-indicator__icon {
+  width: 12px;
+  height: 12px;
+  opacity: 0.85;
+}
+
+.replica-lock-indicator__text {
+  white-space: nowrap;
+}
+
+/* Pulsating glow for active locks */
+@keyframes replica-lock-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Lock overlay on the replica (prevents interaction) */
+.replica-locked-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 170, 51, 0.05);
+  border: 1px dashed rgba(255, 170, 51, 0.4);
+  border-radius: 4px;
+  pointer-events: auto;
+  cursor: not-allowed;
+  z-index: 10;
+}
