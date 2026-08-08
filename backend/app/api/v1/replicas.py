@@ -6,6 +6,7 @@ from typing import Optional, List
 import uuid
 from app.core.database import get_db
 from app.models import Replica, ReplicaHistory, MediaAsset, MediaAsset as _Media, Project as _Project
+from app.domain.rules.project_lifecycle import can_edit_replica
 
 router = APIRouter()
 
@@ -120,6 +121,9 @@ async def patch_replica(
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
     if not replica:
         raise HTTPException(status_code=404, detail="Réplique non trouvée")
+
+    # §16.1 — Vérifier que le projet autorise l'édition (bande non validée/archivée)
+    _check_project_editable_for_replica(replica, db)
 
     # §16.4 — Verrouillage optimiste : vérifier version
     if data.version is not None and replica.version != data.version:
@@ -247,6 +251,9 @@ def split_replica(
     if not replica:
         raise HTTPException(status_code=404, detail="Réplique non trouvée")
 
+    # §16.1 — Vérifier que le projet autorise l'édition
+    _check_project_editable_for_replica(replica, db)
+
     split_ms = data.split_ms
     if split_ms is None:
         split_ms = (replica.start_ms + replica.end_ms) // 2
@@ -365,6 +372,9 @@ def merge_replicas(
     if len(replicas) != len(data.replica_ids):
         raise HTTPException(status_code=404, detail="Une ou plusieurs répliques non trouvées")
 
+    # §16.1 — Vérifier que le projet autorise l'édition
+    _check_project_editable_for_replica(replicas[0], db)
+
     # Vérifier cohérence media_id
     media_ids = {r.media_id for r in replicas}
     if len(media_ids) > 1:
@@ -456,3 +466,32 @@ def merge_replicas(
         "merged_count": len(replicas_sorted),
         "status": "merged",
     }
+
+
+# ── Helper : vérification du statut projet §16.1 ─────────────
+
+def _check_project_editable_for_replica(replica: Replica, db: Session) -> None:
+    """
+    §16.1 — Vérifie que le projet propriétaire de la réplique
+    est dans un statut permettant l'édition (non Validé/Archivé).
+
+    Raises HTTPException 403 si la bande est verrouillée.
+    """
+    media = db.query(_Media).filter(_Media.id == replica.media_id).first()
+    if not media:
+        return  # Pas de média → pas de projet → on laisse passer (edge case)
+    project = db.query(_Project).filter(_Project.id == media.project_id).first()
+    if not project:
+        return  # Projet non trouvé → on laisse passer
+    if not can_edit_replica(project.status):
+        from app.domain.rules.project_lifecycle import ProjectStatus
+        try:
+            label = ProjectStatus(project.status).label
+        except ValueError:
+            label = project.status
+        raise HTTPException(status_code=403, detail={
+            "code": "project_readonly",
+            "message": f"Ce projet est en statut « {label} » : l'édition est verrouillée. Déverrouillez la bande pour modifier les répliques.",
+            "project_status": project.status,
+            "is_editable": False,
+        })

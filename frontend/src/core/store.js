@@ -61,6 +61,9 @@ export class RythmoStore extends EventTarget {
     this.syncStatus = 'idle';
     // §16.4 — replica locks: { replicaId: { user_id, user_name } }
     this.replicaLocks = {};
+    // §16.1 — project lifecycle status
+    this.projectStatus = null;  // e.g. 'En_edition', 'Valide', etc.
+    this.projectStatusInfo = null;  // { label, is_editable, is_readonly, allowed_transitions }
   }
 
   setProject(p) {
@@ -323,6 +326,42 @@ export class RythmoStore extends EventTarget {
     const info = this.replicaLocks[replicaId];
     if (!info) return null;
     return `${info.user_name} édite cette réplique`;
+  }
+
+  // §16.1 — Project lifecycle status management
+  setProjectStatus(status, info = null) {
+    this.projectStatus = status;
+    this.projectStatusInfo = info;
+    this._dispatch('projectStatus');
+  }
+
+  isProjectEditable() {
+    if (this.projectStatusInfo && typeof this.projectStatusInfo.is_editable === 'boolean') {
+      return this.projectStatusInfo.is_editable;
+    }
+    // Default: editable if no status set or unknown
+    return this.projectStatus === null;
+  }
+
+  isProjectReadonly() {
+    if (this.projectStatusInfo && typeof this.projectStatusInfo.is_readonly === 'boolean') {
+      return this.projectStatusInfo.is_readonly;
+    }
+    return false;
+  }
+
+  getProjectStatusLabel() {
+    if (this.projectStatusInfo && this.projectStatusInfo.label) {
+      return this.projectStatusInfo.label;
+    }
+    return this.projectStatus || '';
+  }
+
+  getProjectAllowedTransitions() {
+    if (this.projectStatusInfo && Array.isArray(this.projectStatusInfo.allowed_transitions)) {
+      return this.projectStatusInfo.allowed_transitions;
+    }
+    return [];
   }
 
   _dispatch(type) {

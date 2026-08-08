@@ -55,3 +55,49 @@ body { font-family: system-ui, sans-serif; margin: 0; padding: 2rem; background:
   cursor: not-allowed;
   z-index: 10;
 }
+
+/* §16.1 — Project status badge & readonly overlay */
+.project-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.project-status-badge--Cree { background: #2a2d45; color: #8b8fa3; }
+.project-status-badge--En_traitement { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.project-status-badge--Pret_pour_edition { background: rgba(34,197,94,0.15); color: #4ade80; }
+.project-status-badge--En_edition { background: rgba(251,191,36,0.15); color: #fbbf24; }
+.project-status-badge--En_relecture { background: rgba(168,85,247,0.15); color: #a855f7; }
+.project-status-badge--Valide { background: rgba(34,197,94,0.2); color: #22c55e; }
+.project-status-badge--Exporte_Livre { background: rgba(6,182,212,0.15); color: #06b6d4; }
+.project-status-badge--Archive { background: rgba(107,114,128,0.15); color: #6b7280; }
+
+/* Readonly overlay when project is Valide/Archive */
+.project-readonly-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(107, 114, 128, 0.06);
+  border: 2px solid rgba(107, 114, 128, 0.2);
+  border-radius: 8px;
+  pointer-events: auto;
+  cursor: not-allowed;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.project-readonly-overlay__message {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  font-weight: 500;
+  padding: 8px 16px;
+  background: rgba(11, 12, 21, 0.8);
+  border-radius: 6px;
+}

@@ -18,7 +18,7 @@ class Project(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     source_lang: Mapped[str | None] = mapped_column(String(10), default="fr")
     target_lang: Mapped[str | None] = mapped_column(String(10), default="fr")
-    status: Mapped[str] = mapped_column(String(50), default="draft", index=True)
+    status: Mapped[str] = mapped_column(String(50), default="Cree", index=True)  # §16.1 lifecycle
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

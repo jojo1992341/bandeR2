@@ -191,7 +191,7 @@ export function handleTypoEvent(event, storeInstance = defaultStore, apiInstance
 }
 
 /**
- * Gère l'édition de texte via double-clic §7.3 + §16.4 (optimistic lock)
+ * Gère l'édition de texte via double-clic §7.3 + §16.4 (optimistic lock) + §16.1 (lifecycle)
  */
 export async function handleEditEvent(event, storeInstance = defaultStore, apiInstance = defaultApi, lockManager = null) {
   const detail = event.detail || {};
@@ -202,6 +202,18 @@ export async function handleEditEvent(event, storeInstance = defaultStore, apiIn
   const replica = storeInstance.replicas.find(r => r.id === id);
   if (!replica) return;
   if (replica.text === text) return;
+
+  // §16.1 — Vérifier que le projet est dans un statut permettant l'édition
+  if (!storeInstance.isProjectEditable()) {
+    const label = storeInstance.getProjectStatusLabel();
+    if (typeof console !== 'undefined') console.warn(`Project is in status "${label}" — editing is locked.`);
+    if (typeof document !== 'undefined') {
+      document.dispatchEvent(new CustomEvent('replica:readonly', {
+        detail: { replicaId: id, projectStatus: storeInstance.projectStatus, label },
+      }));
+    }
+    return;
+  }
 
   // §16.4 — Acquire lock before editing
   if (lockManager && !lockManager.isLockedByMe(id)) {
