@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.core.database import get_db
-from app.models import Base, Studio, Project, MediaAsset, Replica, RythmoVersion
+from app.models import Base, Studio, Project, MediaAsset, Replica, RythmoVersion, Export
 
 # Utiliser SQLite in-memory pour l'intégration sans dépendance Postgres
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -21,6 +21,13 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 # Créer le schéma une fois
 Base.metadata.create_all(bind=engine)
+# S'assurer que les nouvelles tables (RythmoVersion, Export) existent même si le moteur a été créé avant leur ajout
+try:
+    from app.models import RythmoVersion, Export
+    RythmoVersion.__table__.create(bind=engine, checkfirst=True)
+    Export.__table__.create(bind=engine, checkfirst=True)
+except:
+    pass
 
 def override_get_db():
     db = TestingSessionLocal()
@@ -34,6 +41,10 @@ client = TestClient(app)
 
 def _clean_db(db):
     # Supprimer dans l'ordre pour respecter FK
+    try:
+        db.query(Export).delete()
+    except:
+        pass
     try:
         db.query(RythmoVersion).delete()
     except:

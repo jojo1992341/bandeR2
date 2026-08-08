@@ -88,4 +88,28 @@ export const api = {
     if (!res.ok) throw new Error(`restore failed ${res.status}: ${await res.text()}`);
     return res.json();
   },
+
+  // ==================== Exports PDF §A.2, §17.1 ====================
+
+  async createExport(projectId, format = 'pdf') {
+    const res = await fetch(`/api/v1/projects/${projectId}/exports`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ format }),
+    });
+    if (!res.ok) throw new Error(`createExport failed ${res.status}: ${await res.text()}`);
+    return res.json();
+  },
+
+  async getExport(exportId) {
+    const res = await fetch(`/api/v1/exports/${exportId}`);
+    if (!res.ok) throw new Error(`getExport failed ${res.status}`);
+    return res.json();
+  },
+
+  async downloadExport(exportId) {
+    const res = await fetch(`/api/v1/exports/${exportId}/download`);
+    if (!res.ok) throw new Error(`downloadExport failed ${res.status}`);
+    return res.blob();
+  },
 };

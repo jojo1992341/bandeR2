@@ -3,6 +3,7 @@ import { initReplicaEditor } from '../components/replica_editor.js';
 import { api } from '../services/api.js';
 import { AutoSave } from '../services/autosave.js';
 import { VersionsPanel } from '../components/versions_panel.js';
+import { ExportsPanel } from '../components/exports_panel.js';
 
 // Initialiser les raccourcis d'édition §14.4 (Ctrl+Maj+S / Ctrl+Maj+F) + undo/redo
 initReplicaEditor(store, api);
@@ -19,25 +20,43 @@ autosave.start();
 const projectId = store.currentProject?.id || '00000000-0000-0000-0000-000000000001';
 let versionsPanel = null;
 function initVersionsPanel() {
-  // Créer conteneur s'il n'existe pas
   let container = document.getElementById('versions-panel');
   if (!container) {
     container = document.createElement('div');
     container.id = 'versions-panel';
-    // Insérer après replica-list
     const app = document.getElementById('app');
     if (app) app.appendChild(container);
     else document.body.appendChild(container);
   }
   versionsPanel = new VersionsPanel('versions-panel', projectId);
   versionsPanel.mount();
-  // Exposer pour tests e2e
   if (typeof window !== 'undefined') window.versionsPanel = versionsPanel;
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initVersionsPanel);
 } else {
   initVersionsPanel();
+}
+
+// Exports PDF §A.2 — panneau d'export
+let exportsPanel = null;
+function initExportsPanel() {
+  let container = document.getElementById('exports-panel');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'exports-panel';
+    const app = document.getElementById('app');
+    if (app) app.appendChild(container);
+    else document.body.appendChild(container);
+  }
+  exportsPanel = new ExportsPanel('exports-panel', projectId);
+  exportsPanel.mount();
+  if (typeof window !== 'undefined') window.exportsPanel = exportsPanel;
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initExportsPanel);
+} else {
+  initExportsPanel();
 }
 
 // Exposer pour debug / tests e2e
