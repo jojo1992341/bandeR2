@@ -1,0 +1,16 @@
+{
+  "name": "rythmoai-frontend",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.9"
+  }
+}
