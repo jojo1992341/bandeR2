@@ -1,7 +1,8 @@
 """
-Alignement forcé pour RythmoAI (§8.2.7 CDC)
+Alignement forcé pour RythmoAI (§8.2.7, §5.4 CDC)
 
 Alignement temporel précis des segments de transcription.
+Utilise l'Internal API pour persister les résultats (§5.4).
 """
 
 from __future__ import annotations
@@ -11,11 +12,14 @@ import subprocess
 import uuid
 from typing import Any
 
+from datetime import datetime, timezone
+
 from app.celery_app import celery_app  # Application Celery centralisée
-from app.core.config import get_settings
-from app.core.database import SessionLocal
-from app.models import MediaAsset, Project, Studio, TranscriptSegment
-from sqlalchemy.orm import Session
+from app.internal_api import (
+    WorkerInternalAPI,
+    ArtifactMetadata,
+    get_worker_api,
+)
 
 
 def _ffmpeg_path() -> str:
@@ -52,20 +56,36 @@ def _load_model() -> Any:
 def forced_alignment(
     self,
     media_path: str,
+    media_id: str,
     segment_id: str | None = None,
+    artifact_id: str | None = None,
     language: str = "fr",
 ) -> dict[str, Any]:
     """
     Alignement forcé des segments de transcription (§8.2.7).
 
+    Utilise l'Internal API pour persister les résultats (§5.4).
+
     Args:
         media_path: Chemin vers le fichier audio.
+        media_id: ID du média.
         segment_id: ID du segment (optionnel).
+        artifact_id: ID de l'artefact (optionnel).
         language: Langue de la transcription.
 
     Returns:
         dict: Résultats de l'alignement.
     """
+    api = get_worker_api()
+    
+    # Générer ou récupérer l'ID d'artefact
+    if artifact_id:
+        artifact_uuid = uuid.UUID(artifact_id)
+    else:
+        artifact_uuid = uuid.uuid4()
+    
+    media_uuid = uuid.UUID(media_id)
+
     try:
         model = _load_model()
         segments_raw, info = model.transcribe(
@@ -90,58 +110,58 @@ def forced_alignment(
         segments = [_DummySegment()]
         lang = language
 
-    db = SessionLocal()
-    try:
-        media = db.query(MediaAsset).first()
-        if not media:
-            studio = Studio(id=uuid.uuid4(), name="Temp Studio FA", plan="pro")
-            db.add(studio)
-            db.commit()
-            proj = Project(
-                id=uuid.uuid4(),
-                studio_id=studio.id,
-                title="Temp FA",
-                source_lang="fr",
-                target_lang="fr",
-                status="draft",
-            )
-            db.add(proj)
-            db.commit()
-            media = MediaAsset(
-                id=uuid.uuid4(),
-                project_id=proj.id,
-                storage_path=media_path,
-                status="confirmed",
-            )
-            db.add(media)
-            db.commit()
-        media_id_val = media.id
+    # Préparer les résultats d'alignement
+    segments_data = []
+    for seg in segments:
+        logp = getattr(seg, "avg_logprob", None)
+        conf = (
+            getattr(seg, "confidence", 0.85)
+            if logp is None
+            else max(0.01, min(1.0, 1.0 + float(logp)))
+        )
+        segments_data.append({
+            "text": seg.text,
+            "start_ms": int(seg.start * 1000),
+            "end_ms": int(seg.end * 1000),
+            "language": lang,
+            "confidence_score": float(conf),
+        })
 
-        for seg in segments:
-            logp = getattr(seg, "avg_logprob", None)
-            conf = (
-                getattr(seg, "confidence", 0.85)
-                if logp is None
-                else max(0.01, min(1.0, 1.0 + float(logp)))
-            )
-            db.add(
-                TranscriptSegment(
-                    id=uuid.uuid4(),
-                    media_id=media_id_val,
-                    text=seg.text,
-                    start_ms=int(seg.start * 1000),
-                    end_ms=int(seg.end * 1000),
-                    language=lang,
-                    confidence_score=float(conf),
-                )
-            )
-        db.commit()
-    finally:
-        db.close()
+    result_data = {
+        "media_id": str(media_uuid),
+        "language": lang,
+        "segments": segments_data,
+        "aligned_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Sauvegarder les résultats via l'Internal API
+    result_path = api.save_result(
+        artifact_uuid,
+        result_data,
+        content_type="application/json"
+    )
+
+    # Mettre à jour les métadonnées
+    if artifact_id is None:
+        metadata = ArtifactMetadata(
+            id=artifact_uuid,
+            type="forced_alignment",
+            media_id=media_uuid,
+            status="completed",
+            result_path=result_path,
+        )
+        api.save_artifact(metadata)
+    else:
+        api.update_artifact_status(
+            artifact_uuid,
+            status="completed",
+            result_path=result_path
+        )
 
     return {
-        "media_path": media_path,
-        "segment_id": segment_id,
+        "media_id": str(media_uuid),
         "language": lang,
-        "segments_max": len(segments),
+        "segments_count": len(segments),
+        "artifact_id": str(artifact_uuid),
+        "result_path": result_path,
     }

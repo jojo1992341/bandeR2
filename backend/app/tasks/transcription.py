@@ -1,16 +1,24 @@
 """
-Transcription audio pour RythmoAI (§8.2.1 CDC)
+Transcription audio pour RythmoAI (§8.2.1, §5.4 CDC)
 
 Transcription des fichiers audio avec Whisper Large v3.
+Utilise l'Internal API pour persister les résultats (§5.4).
 """
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from typing import Any
 
 from app.celery_app import celery_app  # Application Celery centralisée
+from app.internal_api import (
+    WorkerInternalAPI,
+    ArtifactMetadata,
+    get_worker_api,
+    reset_worker_api,
+)
 
 
 try:
@@ -40,19 +48,38 @@ def _get_device_and_compute() -> tuple[str, str]:
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
-def transcribe_audio(self, media_path: str, media_id: str) -> dict[str, Any]:
+def transcribe_audio(
+    self,
+    media_path: str,
+    media_id: str,
+    artifact_id: str | None = None,
+) -> dict[str, Any]:
     """
     Transcription Whisper Large v3 (§8.2.1) — découpage chunks 30s, langage FR.
+
+    Utilise l'Internal API pour persister les résultats (§5.4).
 
     Args:
         media_path: Chemin vers le fichier audio à transcrire.
         media_id: ID du média (UUID).
+        artifact_id: ID de l'artefact (optionnel, auto-généré si non fourni).
 
     Returns:
         dict: Résultats de la transcription.
     """
     device, compute_type = _get_device_and_compute()
     model_name = os.getenv("WHISPER_MODEL", "large-v3")
+
+    # Initialiser l'API interne du worker
+    api = get_worker_api()
+    
+    # Générer ou récupérer l'ID d'artefact
+    if artifact_id:
+        artifact_uuid = uuid.UUID(artifact_id)
+    else:
+        artifact_uuid = uuid.uuid4()
+    
+    media_uuid = uuid.UUID(media_id)
 
     try:
         model = WhisperModel(model_name, device=device, compute_type=compute_type)
@@ -78,37 +105,65 @@ def transcribe_audio(self, media_path: str, media_id: str) -> dict[str, Any]:
         segments = [_DummySegment()]
         language = "fr"
 
-    from sqlalchemy.orm import Session
+    # Préparer les résultats de transcription
+    segments_data = []
+    for seg in segments:
+        logp = getattr(seg, "avg_logprob", None)
+        conf = (
+            getattr(seg, "confidence", 0.92)
+            if logp is None
+            else max(0.01, min(1.0, 1.0 + float(logp)))
+        )
+        segments_data.append({
+            "text": seg.text,
+            "start_ms": int(seg.start * 1000),
+            "end_ms": int(seg.end * 1000),
+            "language": language,
+            "confidence_score": float(conf),
+        })
 
-    from app.core.database import SessionLocal
-    from app.models import TranscriptSegment
-
-    db = SessionLocal()
-    try:
-        for seg in segments:
-            logp = getattr(seg, "avg_logprob", None)
-            conf = (
-                getattr(seg, "confidence", 0.92)
-                if logp is None
-                else max(0.01, min(1.0, 1.0 + float(logp)))
-            )
-            db.add(
-                TranscriptSegment(
-                    id=uuid.uuid4(),
-                    media_id=uuid.UUID(media_id),
-                    text=seg.text,
-                    start_ms=int(seg.start * 1000),
-                    end_ms=int(seg.end * 1000),
-                    language=language,
-                    confidence_score=float(conf),
-                )
-            )
-        db.commit()
-    finally:
-        db.close()
-
-    return {
-        "media_id": media_id,
+    result_data = {
+        "media_id": str(media_uuid),
         "language": language,
         "segments_count": len(segments),
+        "segments": segments_data,
+        "transcribed_at": datetime.utcnow().isoformat(),
     }
+
+    # Sauvegarder les résultats dans le stockage objet (S3)
+    result_path = api.save_result(
+        artifact_uuid,
+        result_data,
+        content_type="application/json"
+    )
+
+    # Mettre à jour les métadonnées de l'artefact
+    if artifact_id is None:
+        # Créer les métadonnées initiales
+        metadata = ArtifactMetadata(
+            id=artifact_uuid,
+            type="transcription",
+            media_id=media_uuid,
+            status="completed",
+            result_path=result_path,
+        )
+        api.save_artifact(metadata)
+    else:
+        # Mettre à jour le statut
+        api.update_artifact_status(
+            artifact_uuid,
+            status="completed",
+            result_path=result_path
+        )
+
+    return {
+        "media_id": str(media_uuid),
+        "language": language,
+        "segments_count": len(segments),
+        "artifact_id": str(artifact_uuid),
+        "result_path": result_path,
+    }
+
+
+# Import datetime pour le timestamp
+from datetime import datetime
