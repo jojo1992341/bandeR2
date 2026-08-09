@@ -45,6 +45,14 @@ class Studio(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    # Relation vers l'abonnement (§9.2, US-053)
+    subscription: Mapped["Subscription | None"] = relationship(
+        "Subscription",
+        back_populates="studio",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )
+
     memberships: Mapped[List["StudioMembership"]] = relationship(
         back_populates="studio"
     )
