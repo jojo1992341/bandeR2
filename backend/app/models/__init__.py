@@ -40,3 +40,4 @@ from .project_organization import (
 )
 from .team import Team, TeamMembership
 from .task import Task
+from .transcript_edit_history import TranscriptEditHistory

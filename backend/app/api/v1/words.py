@@ -137,35 +137,6 @@ def patch_word(
 
     return _serialize_word(w)
 
-@router.patch("/transcript/words/{word_id}", response_model=dict)
-def patch_word_alias(word_id: uuid.UUID, data: WordPatchIn, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_optional_user_payload)):
-    return patch_word(word_id, data, db, payload)
+# Les routes /transcript/segments/{id} et /transcript/words/{id} (correction avec
+# RBAC + historique) sont désormais gérées par app.api.v1.transcripts (G-014).
 
-# Aussi exposer le patch pour les segments (au cas où)
-class SegmentPatchIn(BaseModel):
-    start_ms: Optional[int] = None
-    end_ms: Optional[int] = None
-    text: Optional[str] = None
-
-@router.patch("/transcript/segments/{segment_id}", response_model=dict)
-def patch_segment(segment_id: uuid.UUID, data: SegmentPatchIn, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_optional_user_payload)):
-    seg = db.query(TranscriptSegment).filter(TranscriptSegment.id == segment_id).first()
-    if not seg:
-        raise HTTPException(status_code=404, detail="Segment non trouvé")
-    if data.text is not None:
-        seg.text = data.text
-    if data.start_ms is not None:
-        seg.start_ms = data.start_ms
-    if data.end_ms is not None:
-        seg.end_ms = data.end_ms
-    db.commit()
-    db.refresh(seg)
-    return {
-        "id": str(seg.id),
-        "media_id": str(seg.media_id),
-        "text": seg.text,
-        "start_ms": seg.start_ms,
-        "end_ms": seg.end_ms,
-        "language": seg.language,
-        "confidence_score": float(seg.confidence_score) if seg.confidence_score is not None else None,
-    }

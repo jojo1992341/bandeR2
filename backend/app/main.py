@@ -84,7 +84,7 @@ app.include_router(projects.router, prefix="/api/v1/projects", tags=["projects"]
 app.include_router(studios.router, prefix="/api/v1/studios", tags=["studios"])
 app.include_router(studios.router, prefix="/studios", tags=["studios-alt"])
 app.include_router(
-    transcripts.router, prefix="/api/v1/transcripts", tags=["transcripts"]
+    transcripts.router, prefix="/api/v1", tags=["transcripts"]
 )
 app.include_router(rythmo.router, prefix="/api/v1", tags=["rythmo"])
 app.include_router(exports.router, prefix="/api/v1", tags=["exports"])

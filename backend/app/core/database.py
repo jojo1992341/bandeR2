@@ -70,6 +70,7 @@ from app.models import (  # noqa: F401
     Team,
     TeamMembership,
     Task,
+    TranscriptEditHistory,
 )
 
 

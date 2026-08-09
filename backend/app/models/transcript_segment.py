@@ -1,5 +1,6 @@
 import uuid
-from sqlalchemy import String, Integer, Numeric, DateTime, func, ForeignKey, Text
+from sqlalchemy import String, Integer, Numeric, DateTime, func, ForeignKey, Text, Boolean
+from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
@@ -15,6 +16,7 @@ class TranscriptSegment(Base):
     end_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     language: Mapped[str] = mapped_column(String(10), default="fr")
     confidence_score: Mapped[float] = mapped_column(Numeric(4, 3), default=0.0)
+    is_manually_edited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=sql_text("false"))
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
