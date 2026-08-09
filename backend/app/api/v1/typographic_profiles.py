@@ -4,12 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.rbac import get_current_user_payload, get_optional_user_payload
+from app.core.rbac import get_current_user_payload, get_current_user_payload
 from app.core.audit import record_audit_log
 from app.models import Studio, TypographicProfile
 from app.services.typographic_profile_service import TypographicProfileService, DEFAULT_CODES, DEFAULT_THRESHOLDS, validate_profile_payload
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 class TypographicProfileIn(BaseModel):
     name: str
@@ -63,7 +63,7 @@ def _require_admin_or_owner(db: Session, payload: Optional[dict], studio_id: uui
 def get_typographic_profiles(
     studio_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     studio = db.query(Studio).filter(Studio.id == studio_id).first()
     if not studio:
@@ -217,7 +217,7 @@ def get_typographic_profile(
     studio_id: uuid.UUID,
     profile_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     studio = db.query(Studio).filter(Studio.id == studio_id).first()
     if not studio:

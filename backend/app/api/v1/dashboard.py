@@ -20,11 +20,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, and_
 from typing import Optional, List
+from app.core.rbac import get_current_user_payload
 from app.core.database import get_db
 from app.models import Studio, Project, PipelineJob, MediaAsset, Replica, Speaker, TranscriptSegment, Word
 from app.domain.rules.project_lifecycle import ProjectStatus, _resolve_status
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 
 # ── Helpers ───────────────────────────────────────────────────

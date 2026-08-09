@@ -5,11 +5,11 @@ from sqlalchemy import and_
 from typing import Optional, List
 import uuid
 from app.core.database import get_db
-from app.core.rbac import get_optional_user_payload
+from app.core.rbac import get_current_user_payload
 from app.models import Replica, ReplicaHistory, MediaAsset, MediaAsset as _Media, Project as _Project, Studio
 from app.domain.rules.project_lifecycle import can_edit_replica
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 class ReplicaPatchIn(BaseModel):
     text: Optional[str] = None
@@ -114,7 +114,7 @@ async def patch_replica(
     replica_id: uuid.UUID,
     data: ReplicaPatchIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(get_optional_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
     """
     PATCH /replicas/{id} §16.4 — Édition avec verrouillage optimiste.

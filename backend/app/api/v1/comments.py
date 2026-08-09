@@ -5,12 +5,13 @@ from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
 
+from app.core.rbac import get_current_user_payload
 from app.core.database import get_db
 from app.core.auth_handler import verify_token
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.models import Comment, Replica, User
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 security = HTTPBearer(auto_error=False)
 
 class CommentCreateIn(BaseModel):

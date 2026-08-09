@@ -11,7 +11,7 @@ from app.core.rbac import get_current_user_payload, normalize_role
 from app.core.audit import record_audit_log
 from app.models import Studio, User, StudioMembership, StudioInvitation
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 class InviteIn(BaseModel):
     email: EmailStr

@@ -52,7 +52,7 @@ from app.models import (
 )
 from app.models.replica import Replica
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 
 # ------------------------------------------------------------------
@@ -172,7 +172,7 @@ def health_check():
 
 
 @router.get("/statuses", response_model=list)
-def get_statuses():
+def get_statuses(payload: dict = Depends(get_current_user_payload)):
     return [
         {"value": "Cree", "label": "Créé", "description": "Projet créé"},
         {"value": "En_traitement", "label": "En traitement", "description": "IA en cours"},

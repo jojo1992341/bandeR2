@@ -37,7 +37,7 @@ from app.models import (
     Word,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 
 # ------------------------------------------------------------------

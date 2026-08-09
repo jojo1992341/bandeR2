@@ -18,6 +18,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, De
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.core.rbac import get_current_user_payload
 from app.models import Replica
 from app.services.replica_lock_manager import lock_manager
 
@@ -142,7 +143,7 @@ async def replica_lock_heartbeat(
 # ── REST : Statut du verrou ──────────────────────────────────
 
 @router.get("/replicas/{replica_id}/lock", response_model=dict)
-async def get_replica_lock_status(replica_id: uuid.UUID):
+async def get_replica_lock_status(replica_id: uuid.UUID, payload: dict = Depends(get_current_user_payload)):
     """§16.4 — Retourne le statut du verrou sur une réplique."""
     lock = lock_manager.get_lock(replica_id)
     if lock:

@@ -4,12 +4,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.auth_handler import verify_token
-from app.core.rbac import require_role, get_optional_user_payload
+from app.core.rbac import require_role, get_current_user_payload
 from app.models import Speaker, Project
 import uuid
 from typing import Optional
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 class SpeakerMergeIn(BaseModel):
     label: str | None = None
@@ -20,7 +20,7 @@ def list_speakers(project_id: uuid.UUID, db: Session = Depends(get_db)):
     return db.query(Speaker).filter(Speaker.project_id == project_id).all()
 
 @router.patch("/speakers/{speaker_id}")
-def patch_speaker(speaker_id: uuid.UUID, data: SpeakerMergeIn, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_optional_user_payload)):
+def patch_speaker(speaker_id: uuid.UUID, data: SpeakerMergeIn, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_current_user_payload)):
     speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
     if not speaker:
         raise HTTPException(status_code=404, detail="Locuteur non trouvé")

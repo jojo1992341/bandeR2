@@ -22,7 +22,7 @@ from app.core.tenant import get_user_id_from_payload
 from app.models import UserPreferences
 from app.models.user_preferences import VALID_THEMES, DEFAULT_THEME, DEFAULT_LANGUAGE
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 
 class PreferencesOut(BaseModel):

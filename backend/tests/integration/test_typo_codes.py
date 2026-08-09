@@ -13,6 +13,32 @@ from .test_replica_split_merge import (
 )
 from app.models import Studio, Project, MediaAsset, Replica
 
+from app.core.auth_handler import create_access_token
+from app.core.password import hash_password as _hash_pw
+
+_auth_user_id = None
+def _auth_headers():
+    """Crée (une fois) un utilisateur authentifié pour les tests."""
+    global _auth_user_id
+    db = TestingSessionLocal()
+    try:
+        from app.models import User, StudioMembership
+        studio = db.query(Studio).first()
+        if not studio:
+            return {}
+        if _auth_user_id is None:
+            u = User(id=uuid.uuid4(), email="authtest@rythmo.local",
+                     hashed_password=_hash_pw("x"), role="adaptateur", is_active=True)
+            db.add(u); db.flush()
+            db.add(StudioMembership(id=uuid.uuid4(), studio_id=studio.id, user_id=u.id, role="adaptateur"))
+            db.commit()
+            _auth_user_id = u.id
+        token = create_access_token({"sub": str(_auth_user_id), "email": "authtest@rythmo.local", "role": "adaptateur", "tv": 0})
+        return {"Authorization": f"Bearer {token}"}
+    finally:
+        db.close()
+
+
 def _setup_fixture():
     # Wrapper pour réutiliser la même logique mais avec un média dédié typo
     # On nettoie d'abord
@@ -39,7 +65,7 @@ def test_patch_typo_codes_single_code():
         db.add(rep); db.commit(); db.close()
 
         # Appliquer italique (voix off)
-        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"italique": True}})
+        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"italique": True}}, headers=_auth_headers())
         assert resp.status_code == 200, resp.text
         data = resp.json()
         assert data["status"] == "updated"
@@ -47,7 +73,7 @@ def test_patch_typo_codes_single_code():
         assert data["typo_codes"].get("italique") is True
 
         # Vérifier via GET que c'est persisté
-        resp2 = client.get(f"/api/v1/replicas/{rid}")
+        resp2 = client.get(f"/api/v1/replicas/{rid}", headers=_auth_headers())
         assert resp2.status_code == 200
         rep2 = resp2.json()
         assert rep2["typo_codes"].get("italique") is True
@@ -72,29 +98,29 @@ def test_patch_typo_codes_all_metier_codes():
         db.add(rep); db.commit(); db.close()
 
         # Crochets d'entrée/sortie
-        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"crochets": True}})
+        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"crochets": True}}, headers=_auth_headers())
         assert resp.status_code == 200
-        assert client.get(f"/api/v1/replicas/{rid}").json()["typo_codes"]["crochets"] is True
+        assert client.get(f"/api/v1/replicas/{rid}", headers=_auth_headers()).json()["typo_codes"]["crochets"] is True
 
         # Italique voix off (alias)
-        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"italic": True}})
+        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"italic": True}}, headers=_auth_headers())
         assert resp.status_code == 200
-        data = client.get(f"/api/v1/replicas/{rid}").json()
+        data = client.get(f"/api/v1/replicas/{rid}", headers=_auth_headers()).json()
         # Doit merger avec crochets, pas écraser
         assert data["typo_codes"].get("crochets") is True
         assert data["typo_codes"].get("italique") is True
 
         # MAJUSCULES cris (alias majuscules / uppercase / cri)
-        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"majuscules": True}})
+        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"majuscules": True}}, headers=_auth_headers())
         assert resp.status_code == 200
-        data = client.get(f"/api/v1/replicas/{rid}").json()
+        data = client.get(f"/api/v1/replicas/{rid}", headers=_auth_headers()).json()
         assert data["typo_codes"]["majuscules"] is True
         assert data["typo_codes"]["crochets"] is True  # toujours présent
 
         # Parentheses indications de jeu
-        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"parentheses": True}})
+        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"parentheses": True}}, headers=_auth_headers())
         assert resp.status_code == 200
-        data = client.get(f"/api/v1/replicas/{rid}").json()
+        data = client.get(f"/api/v1/replicas/{rid}", headers=_auth_headers()).json()
         assert data["typo_codes"]["parentheses"] is True
         assert data["typo_codes"]["italique"] is True
 
@@ -116,13 +142,13 @@ def test_patch_typo_codes_merge_and_toggle():
         db.add(rep); db.commit(); db.close()
 
         # Ajouter majuscules, doit merger
-        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"majuscules": True}})
+        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"majuscules": True}}, headers=_auth_headers())
         assert resp.status_code == 200
         assert resp.json()["typo_codes"]["crochets"] is True
         assert resp.json()["typo_codes"]["majuscules"] is True
 
         # Désactiver crochets
-        resp2 = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"crochets": False}})
+        resp2 = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"crochets": False}}, headers=_auth_headers())
         assert resp2.status_code == 200
         data = resp2.json()["typo_codes"]
         # Après désactivation, crochets doit être False ou absent
@@ -144,20 +170,20 @@ def test_patch_typo_codes_alias_normalization():
         db.add(rep); db.commit(); db.close()
 
         # Utiliser alias anglais "brackets" doit être normalisé en "crochets"
-        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"brackets": True}})
+        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"brackets": True}}, headers=_auth_headers())
         assert resp.status_code == 200
         assert resp.json()["typo_codes"].get("crochets") is True
 
         # Alias "italic" -> "italique"
-        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"italic": True}})
+        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"italic": True}}, headers=_auth_headers())
         assert resp.json()["typo_codes"].get("italique") is True
 
         # Alias "uppercase" -> "majuscules"
-        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"uppercase": True}})
+        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"uppercase": True}}, headers=_auth_headers())
         assert resp.json()["typo_codes"].get("majuscules") is True
 
         # Alias "parentheses_jeu"
-        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"parentheses_jeu": True}})
+        resp = client.patch(f"/api/v1/replicas/{rid}", json={"typo_codes": {"parentheses_jeu": True}}, headers=_auth_headers())
         assert resp.json()["typo_codes"].get("parentheses") is True
 
         db2 = TestingSessionLocal(); _clean_db(db2); db2.close()
@@ -175,14 +201,14 @@ def test_patch_typo_codes_persists_with_split_and_merge():
         db.add(rep); db.commit(); db.close()
 
         # Split
-        resp = client.post(f"/api/v1/replicas/{rid}/split", json={"split_ms": 2000})
+        resp = client.post(f"/api/v1/replicas/{rid}/split", json={"split_ms": 2000}, headers=_auth_headers())
         assert resp.status_code == 200
         r1, r2 = resp.json()["replicas"]
         assert r1["typo_codes"].get("italique") is True
         assert r2["typo_codes"].get("crochets") is True
 
         # Merge
-        resp2 = client.post("/api/v1/replicas/merge", json={"replica_ids": [r1["id"], r2["id"]]})
+        resp2 = client.post("/api/v1/replicas/merge", json={"replica_ids": [r1["id"], r2["id"]]}, headers=_auth_headers())
         assert resp2.status_code == 200
         merged = resp2.json()["replica"]
         assert merged["typo_codes"].get("italique") is True
@@ -195,7 +221,7 @@ def test_patch_typo_codes_persists_with_split_and_merge():
 
 def test_patch_typo_codes_invalid_not_found():
     fake = uuid.uuid4()
-    resp = client.patch(f"/api/v1/replicas/{fake}", json={"typo_codes": {"italique": True}})
+    resp = client.patch(f"/api/v1/replicas/{fake}", json={"typo_codes": {"italique": True}}, headers=_auth_headers())
     assert resp.status_code == 404
 
 def test_get_replica_returns_typo_codes():
@@ -206,7 +232,7 @@ def test_get_replica_returns_typo_codes():
         rep = Replica(id=rid, media_id=media.id, text="Test", start_ms=0, end_ms=1000, order_index=0, typo_codes={"majuscules": True})
         db.add(rep); db.commit(); db.close()
 
-        resp = client.get(f"/api/v1/replicas/{rid}")
+        resp = client.get(f"/api/v1/replicas/{rid}", headers=_auth_headers())
         assert resp.status_code == 200
         assert resp.json()["typo_codes"]["majuscules"] is True
         assert resp.json()["text"] == "Test"

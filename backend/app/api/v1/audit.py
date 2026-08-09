@@ -3,10 +3,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.rbac import get_optional_user_payload
+from app.core.rbac import get_current_user_payload
 from app.models import AuditLog, SecurityAlert
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 
 @router.get("/audit-logs", response_model=List[dict])
@@ -19,7 +19,7 @@ def list_audit_logs(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     query = db.query(AuditLog)
     if studio_id:
@@ -65,7 +65,7 @@ def list_security_alerts(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     query = db.query(SecurityAlert)
     if studio_id:
@@ -106,7 +106,7 @@ def list_security_alerts(
 def resolve_security_alert(
     alert_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     alert = (
         db.query(SecurityAlert).filter(SecurityAlert.id == alert_id).first()

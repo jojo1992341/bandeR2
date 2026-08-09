@@ -3,11 +3,11 @@ from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.rbac import get_optional_user_payload
+from app.core.rbac import get_current_user_payload
 from app.models import Replica, MediaAsset, Project, EmotionTag
 from app.services.emotion_service import EmotionService
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 
 @router.get("/replicas/{replica_id}/emotion-tags", response_model=List[Dict[str, Any]])
@@ -15,7 +15,7 @@ router = APIRouter()
 def get_replica_emotion_tags(
     replica_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
     if not replica:
@@ -30,7 +30,7 @@ def get_replica_emotion_tags(
 def detect_replica_emotion_tags(
     replica_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
     if not replica:
@@ -45,7 +45,7 @@ def detect_replica_emotion_tags(
 def get_media_emotion_tags(
     media_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     media = db.query(MediaAsset).filter(MediaAsset.id == media_id).first()
     if not media:
@@ -60,7 +60,7 @@ def get_media_emotion_tags(
 def detect_media_emotion_tags(
     media_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     media = db.query(MediaAsset).filter(MediaAsset.id == media_id).first()
     if not media:
@@ -75,7 +75,7 @@ def detect_media_emotion_tags(
 def get_project_emotion_tags(
     project_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -90,7 +90,7 @@ def get_project_emotion_tags(
 def detect_project_emotion_tags(
     project_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -106,7 +106,7 @@ def detect_project_emotion_tags(
 def get_replicas_with_emotions(
     project_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from app.core.rbac import get_current_user_payload
 from app.core.database import get_db
 from app.models import PipelineJob, Project, MediaAsset, Replica, RythmoVersion
 from app.services.rythmo_engine import RythmoEngine
@@ -9,7 +10,7 @@ import uuid
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 class RythmoGenerateIn(BaseModel):
     media_id: uuid.UUID

@@ -9,10 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.core.database import get_db
-from app.core.rbac import get_optional_user_payload
+from app.core.rbac import get_current_user_payload
 from app.models import Word, TranscriptSegment, MediaAsset, Project
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 class WordPatchIn(BaseModel):
     start_ms: Optional[int] = None
@@ -44,7 +44,7 @@ def patch_word(
     word_id: uuid.UUID,
     data: WordPatchIn,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     w = db.query(Word).filter(Word.id == word_id).first()
     if not w:

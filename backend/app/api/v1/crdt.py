@@ -8,12 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.core.database import get_db
-from app.core.rbac import get_optional_user_payload, get_current_user_payload
+from app.core.rbac import get_current_user_payload, get_current_user_payload
 from app.models import Replica, MediaAsset, Project, Studio
 from app.services.crdt_service import CrdtService, TextCRDT
 from app.core.config import get_settings
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 class CrdtOperationIn(BaseModel):
     site_id: str = Field(..., description="Identifiant unique du site/client (ex: user-123)")
@@ -65,7 +65,7 @@ def init_crdt(
     replica_id: uuid.UUID,
     data: CrdtInitIn = None,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     """Initialise l'état CRDT pour une réplique à partir de son texte actuel"""
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
@@ -99,7 +99,7 @@ def init_crdt(
 def get_crdt_state(
     replica_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     """Récupère l'état CRDT actuel d'une réplique"""
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
@@ -130,7 +130,7 @@ def apply_crdt_operation(
     replica_id: uuid.UUID,
     data: CrdtOperationIn,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     """Applique une opération CRDT (insert/delete) — commutatif et convergent"""
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
@@ -179,7 +179,7 @@ def sync_crdt(
     replica_id: uuid.UUID,
     data: CrdtSyncIn,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     """Fusionne un état distant (pour synchronisation et test de convergence)"""
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
@@ -204,7 +204,7 @@ def sync_crdt(
 def is_crdt_enabled(
     replica_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     """Vérifie si le CRDT est activé pour cette réplique (feature flag + volume)"""
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
@@ -228,7 +228,7 @@ def bulk_crdt_operations(
     replica_id: uuid.UUID,
     operations: List[CrdtOperationIn],
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     """Applique plusieurs opérations CRDT en lot (pour tests de convergence)"""
     replica = db.query(Replica).filter(Replica.id == replica_id).first()

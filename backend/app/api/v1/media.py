@@ -15,7 +15,7 @@ from app.models import MediaAsset, Project
 from app.repositories.project_repo import ProjectRepo
 from app.repositories.media_asset_repo import MediaAssetRepo
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 ALLOWED_FORMAT_FRAGMENTS = {"mp4", "mov", "mxf", "avi", "matroska", "h264"}
 

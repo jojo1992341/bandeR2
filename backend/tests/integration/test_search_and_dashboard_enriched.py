@@ -16,6 +16,32 @@ from app.main import app
 from app.core.database import engine, SessionLocal as TestingSessionLocal
 from app.models import Base, Studio, Project, MediaAsset, TranscriptSegment, Word, Replica, Speaker, PipelineJob, Export
 
+from app.core.auth_handler import create_access_token
+from app.core.password import hash_password as _hash_pw
+
+_auth_user_id = None
+def _auth_headers():
+    """Crée (une fois) un utilisateur authentifié pour les tests."""
+    global _auth_user_id
+    db = TestingSessionLocal()
+    try:
+        from app.models import User, StudioMembership
+        studio = db.query(Studio).first()
+        if not studio:
+            return {}
+        if _auth_user_id is None:
+            u = User(id=uuid.uuid4(), email="authtest@rythmo.local",
+                     hashed_password=_hash_pw("x"), role="adaptateur", is_active=True)
+            db.add(u); db.flush()
+            db.add(StudioMembership(id=uuid.uuid4(), studio_id=studio.id, user_id=u.id, role="adaptateur"))
+            db.commit()
+            _auth_user_id = u.id
+        token = create_access_token({"sub": str(_auth_user_id), "email": "authtest@rythmo.local", "role": "adaptateur", "tv": 0})
+        return {"Authorization": f"Bearer {token}"}
+    finally:
+        db.close()
+
+
 Base.metadata.create_all(bind=engine)
 client = TestClient(app)
 
@@ -118,7 +144,7 @@ class TestFullTextSearch:
         try:
             # Recherche "banane" — doit retourner P1 et P3 (et leurs répliques), pas P2 (pomme)
             start = time.time()
-            resp = client.get(f"/api/v1/studios/{studio_id}/search?q=banane&limit=20")
+            resp = client.get(f"/api/v1/studios/{studio_id}/search?q=banane&limit=20", headers=_auth_headers())
             latency_ms = int((time.time() - start) * 1000)
             assert resp.status_code == 200, f"Search failed: {resp.text}"
             data = resp.json()
@@ -136,31 +162,31 @@ class TestFullTextSearch:
                 assert "<mark>" in rep["highlighted"], f"Highlight manquant: {rep['highlighted']}"
 
             # Recherche "pomme" — doit retourner P2 et P3
-            resp2 = client.get(f"/api/v1/studios/{studio_id}/search?q=pomme&limit=20")
+            resp2 = client.get(f"/api/v1/studios/{studio_id}/search?q=pomme&limit=20", headers=_auth_headers())
             assert resp2.status_code == 200
             data2 = resp2.json()
             assert data2["total_projects"] >= 2
             assert any("pomme" in r["text"].lower() for r in data2["replicas"])
 
             # Recherche "rythmo" — P1 et P3
-            resp3 = client.get(f"/api/v1/studios/{studio_id}/search?q=rythmo&limit=20")
+            resp3 = client.get(f"/api/v1/studios/{studio_id}/search?q=rythmo&limit=20", headers=_auth_headers())
             assert resp3.status_code == 200
             data3 = resp3.json()
             assert data3["total_projects"] >= 2
             assert data3["total_replicas"] >= 2
 
             # Recherche insensible à la casse et accents
-            resp4 = client.get(f"/api/v1/studios/{studio_id}/search?q=BANANE&limit=20")
+            resp4 = client.get(f"/api/v1/studios/{studio_id}/search?q=BANANE&limit=20", headers=_auth_headers())
             assert resp4.status_code == 200
             assert resp4.json()["total_projects"] >= 2
 
             # Recherche avec pagination
-            resp5 = client.get(f"/api/v1/studios/{studio_id}/search?q=banane&limit=1&offset=0")
+            resp5 = client.get(f"/api/v1/studios/{studio_id}/search?q=banane&limit=1&offset=0", headers=_auth_headers())
             assert resp5.status_code == 200
             assert len(resp5.json()["replicas"]) <= 1
 
             # Recherche vide ou trop courte (<2) doit retourner 0 ou erreur 422
-            resp6 = client.get(f"/api/v1/studios/{studio_id}/search?q=a&limit=20")
+            resp6 = client.get(f"/api/v1/studios/{studio_id}/search?q=a&limit=20", headers=_auth_headers())
             # Soit 422 (validation), soit 200 avec 0 résultats
             assert resp6.status_code in (200, 422)
             if resp6.status_code == 200:
@@ -168,7 +194,7 @@ class TestFullTextSearch:
 
             # Recherche sur studio inexistant -> 404
             fake = uuid.uuid4()
-            resp7 = client.get(f"/api/v1/studios/{fake}/search?q=banane")
+            resp7 = client.get(f"/api/v1/studios/{fake}/search?q=banane", headers=_auth_headers())
             assert resp7.status_code == 404
 
         finally:
@@ -208,7 +234,7 @@ class TestFullTextSearch:
             db.close()
 
         try:
-            resp_a = client.get(f"/api/v1/studios/{studio_a_id}/search?q=banane")
+            resp_a = client.get(f"/api/v1/studios/{studio_a_id}/search?q=banane", headers=_auth_headers())
             assert resp_a.status_code == 200
             # Ne doit trouver que le projet A
             assert resp_a.json()["total_projects"] >= 1
@@ -216,12 +242,12 @@ class TestFullTextSearch:
                 assert proj["id"] != studio_b_id
                 assert "secret" in proj["title"].lower() or "A" in proj["title"]
 
-            resp_b = client.get(f"/api/v1/studios/{studio_b_id}/search?q=pomme")
+            resp_b = client.get(f"/api/v1/studios/{studio_b_id}/search?q=pomme", headers=_auth_headers())
             assert resp_b.status_code == 200
             assert resp_b.json()["total_projects"] >= 1
 
             # Recherche "secret" sur studio A ne doit pas retourner le projet B
-            resp_a_secret = client.get(f"/api/v1/studios/{studio_a_id}/search?q=secret")
+            resp_a_secret = client.get(f"/api/v1/studios/{studio_a_id}/search?q=secret", headers=_auth_headers())
             assert resp_a_secret.status_code == 200
             # Vérifier que seul le studio A est retourné
             for proj in resp_a_secret.json()["projects"]:
@@ -250,7 +276,7 @@ class TestFullTextSearch:
 
             # Mesurer la latence
             start = time.time()
-            resp = client.get(f"/api/v1/studios/{studio_id}/search?q=banane&limit=50")
+            resp = client.get(f"/api/v1/studios/{studio_id}/search?q=banane&limit=50", headers=_auth_headers())
             elapsed_ms = int((time.time() - start) * 1000)
             assert resp.status_code == 200
             data = resp.json()
@@ -264,7 +290,7 @@ class TestFullTextSearch:
 
             # Tester suggest endpoint rapide
             start2 = time.time()
-            resp2 = client.get(f"/api/v1/studios/{studio_id}/search/suggest?q=ban&limit=5")
+            resp2 = client.get(f"/api/v1/studios/{studio_id}/search/suggest?q=ban&limit=5", headers=_auth_headers())
             elapsed2_ms = int((time.time() - start2) * 1000)
             assert resp2.status_code == 200
             assert resp2.json()["latency_ms"] < 500
@@ -278,7 +304,7 @@ class TestDashboardEnriched:
         fixture = _setup_studio_with_searchable_content()
         studio_id = fixture["studio_id"]
         try:
-            resp = client.get(f"/api/v1/studios/{studio_id}/dashboard")
+            resp = client.get(f"/api/v1/studios/{studio_id}/dashboard", headers=_auth_headers())
             assert resp.status_code == 200
             data = resp.json()
             # Vérifier que chaque projet a des stats enrichies
@@ -347,7 +373,7 @@ class TestDashboardEnriched:
                 db.close()
 
             start = time.time()
-            resp = client.get(f"/api/v1/studios/{studio_id}/dashboard")
+            resp = client.get(f"/api/v1/studios/{studio_id}/dashboard", headers=_auth_headers())
             elapsed_ms = int((time.time() - start) * 1000)
             assert resp.status_code == 200
             data = resp.json()

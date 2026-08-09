@@ -33,7 +33,7 @@ from app.models import (
 )
 from app.models.task import TASK_STATUSES, DEFAULT_TASK_STATUS
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 
 # ------------------------------------------------------------------

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional, List
+from app.core.rbac import get_current_user_payload
 from app.core.database import get_db
 from app.models import Project
 from app.domain.rules.project_lifecycle import (
@@ -24,7 +25,7 @@ from app.domain.rules.project_lifecycle import (
     is_transition_allowed,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 
 # ── Pydantic models ───────────────────────────────────────────

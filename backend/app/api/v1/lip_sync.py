@@ -5,14 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.config import get_settings
-from app.core.rbac import get_optional_user_payload, get_current_user_payload
+from app.core.rbac import get_current_user_payload, get_current_user_payload
 from app.models import MediaAsset, Project
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 @router.get("/media/{media_id}/lip-sync")
 @router.get("/api/v1/media/{media_id}/lip-sync", response_model=Dict[str, Any])
-def get_lip_sync(media_id: uuid.UUID, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_optional_user_payload)):
+def get_lip_sync(media_id: uuid.UUID, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_current_user_payload)):
     from app.services.lip_sync_service import LipSyncService
     media = db.query(MediaAsset).filter(MediaAsset.id == media_id).first()
     if not media:
@@ -68,7 +68,7 @@ def detect_lip_sync(media_id: uuid.UUID, db: Session = Depends(get_db), payload:
 
 @router.get("/projects/{project_id}/lip-sync")
 @router.get("/api/v1/projects/{project_id}/lip-sync", response_model=Dict[str, Any])
-def get_project_lip_sync(project_id: uuid.UUID, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_optional_user_payload)):
+def get_project_lip_sync(project_id: uuid.UUID, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_current_user_payload)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Projet non trouvé")
@@ -116,7 +116,7 @@ def detect_project_lip_sync(project_id: uuid.UUID, db: Session = Depends(get_db)
 
 @router.get("/features")
 @router.get("/api/v1/features", response_model=Dict[str, Any])
-def get_features(payload: Optional[dict] = Depends(get_optional_user_payload)):
+def get_features(payload: Optional[dict] = Depends(get_current_user_payload)):
     settings = get_settings()
     return {
         "features": {

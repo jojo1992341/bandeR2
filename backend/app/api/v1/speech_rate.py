@@ -1,6 +1,7 @@
 from typing import Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from app.core.rbac import get_current_user_payload
 from app.services.speech_rate_service import (
     count_syllables,
     compute_speech_rate,
@@ -8,7 +9,7 @@ from app.services.speech_rate_service import (
     DEFAULT_SPEECH_RATE_THRESHOLDS,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 
 class SpeechRateEvalIn(BaseModel):

@@ -4321,6 +4321,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Purge Expired Exports Endpoint",
         "tags": [
           "exports"
@@ -5997,6 +6002,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Comment",
         "tags": [
           "comments"
@@ -6016,6 +6026,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Purge Expired Exports Endpoint",
         "tags": [
           "exports-alt"
@@ -6061,6 +6076,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Export",
         "tags": [
           "exports"
@@ -6910,6 +6930,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Health Check",
         "tags": [
           "projects"
@@ -6934,6 +6959,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List All Statuses",
         "tags": [
           "project-lifecycle"
@@ -7554,6 +7584,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Replicas",
         "tags": [
           "rythmo"
@@ -7686,6 +7721,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Compare Alias",
         "tags": [
           "rythmo"
@@ -7737,6 +7777,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Generate Rythmo",
         "tags": [
           "rythmo"
@@ -7782,6 +7827,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Versions",
         "tags": [
           "rythmo"
@@ -7834,6 +7884,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Create Version",
         "tags": [
           "rythmo"
@@ -7945,6 +8000,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Compare Versions",
         "tags": [
           "rythmo"
@@ -8000,6 +8060,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Version",
         "tags": [
           "rythmo"
@@ -8055,6 +8120,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Restore Version",
         "tags": [
           "rythmo"
@@ -8096,6 +8166,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Speakers",
         "tags": [
           "speakers-api"
@@ -8140,6 +8215,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Project Status",
         "tags": [
           "project-lifecycle"
@@ -8192,6 +8272,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Transition Project Status",
         "tags": [
           "project-lifecycle"
@@ -8327,6 +8412,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Unlock Project",
         "tags": [
           "project-lifecycle"
@@ -8380,6 +8470,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Validate Project",
         "tags": [
           "project-lifecycle"
@@ -9463,6 +9558,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Merge Replicas",
         "tags": [
           "replicas"
@@ -9509,6 +9609,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Replica",
         "tags": [
           "replicas"
@@ -10288,6 +10393,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Replica Lock Status",
         "tags": [
           "replica-locks"
@@ -10396,6 +10506,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Split Replica",
         "tags": [
           "replicas"
@@ -10676,6 +10791,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Evaluate Speech Rate Endpoint",
         "tags": [
           "speech-rate"
@@ -10699,6 +10819,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Speech Rate Thresholds",
         "tags": [
           "speech-rate"
@@ -10718,6 +10843,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Health Check",
         "tags": [
           "studios"
@@ -10926,6 +11056,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Studio Dashboard",
         "tags": [
           "dashboard"
@@ -11712,6 +11847,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Studio Projects",
         "tags": [
           "dashboard"
@@ -11944,6 +12084,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Studio Security Settings",
         "tags": [
           "studios"
@@ -11993,6 +12138,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Update Studio Security Settings",
         "tags": [
           "studios"
@@ -12042,6 +12192,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Update Studio Security Settings",
         "tags": [
           "studios"
@@ -14417,6 +14572,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Health Check",
         "tags": [
           "users"
@@ -14826,6 +14986,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Word",
         "tags": [
           "words"
@@ -16440,6 +16605,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Purge Expired Exports Endpoint",
         "tags": [
           "exports-alt"
@@ -16485,6 +16655,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Export",
         "tags": [
           "exports-alt"
@@ -17496,6 +17671,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Speakers",
         "tags": [
           "speakers"
@@ -19270,6 +19450,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Evaluate Speech Rate Endpoint",
         "tags": [
           "speech-rate"
@@ -19293,6 +19478,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Speech Rate Thresholds",
         "tags": [
           "speech-rate"
@@ -19312,6 +19502,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Health Check",
         "tags": [
           "studios-alt"
@@ -19568,6 +19763,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Studio Security Settings",
         "tags": [
           "studios-alt"
@@ -19617,6 +19817,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Update Studio Security Settings",
         "tags": [
           "studios-alt"
@@ -19666,6 +19871,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Update Studio Security Settings",
         "tags": [
           "studios-alt"
@@ -20645,6 +20855,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Word",
         "tags": [
           "words-alt"

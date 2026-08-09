@@ -9,11 +9,11 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.rbac import get_optional_user_payload, get_current_user_payload
+from app.core.rbac import get_current_user_payload, get_current_user_payload
 from app.models import Studio
 from app.services.search_service import SearchService
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 @router.get("/studios/{studio_id}/search", response_model=dict)
 def search_studio(
@@ -24,7 +24,7 @@ def search_studio(
     include_replicas: bool = Query(True, description="Inclure les répliques"),
     include_transcripts: bool = Query(True, description="Inclure les transcriptions"),
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     """
     §16.1 — Recherche full-text dans les transcriptions de l'ensemble des projets d'un studio.
@@ -69,7 +69,7 @@ def search_suggest(
     q: str = Query(..., min_length=1, max_length=100, description="Préfixe pour suggestion"),
     limit: int = Query(5, ge=1, le=20),
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     """
     Autocomplétion rapide pour la recherche (utilisée dans le dashboard).

@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.core.database import get_db
-from app.core.rbac import get_current_user_payload, get_optional_user_payload
+from app.core.rbac import get_current_user_payload, get_current_user_payload
 from app.models import Studio
 from app.services.sso_service import SsoService
 

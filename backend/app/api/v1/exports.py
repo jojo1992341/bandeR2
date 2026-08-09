@@ -11,12 +11,12 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.core.database import get_db
-from app.core.rbac import get_optional_user_payload, is_risky_role
+from app.core.rbac import get_current_user_payload, is_risky_role
 from app.core.rate_limit import export_rate_limit_dep
 from app.core.audit import record_audit_log, check_download_anomalies
 from app.models import Project, MediaAsset, Replica, Export, Studio
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user_payload)])
 
 EXPORT_DIR = Path(os.getenv("EXPORT_DIR", "/tmp/rythmo_exports"))
 EXPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1348,7 +1348,7 @@ def create_export(
     data: ExportCreateIn = ExportCreateIn(),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
     _rl=Depends(export_rate_limit_dep),
 ):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -1563,7 +1563,7 @@ def get_export(export_id: uuid.UUID, db: Session = Depends(get_db)):
 def download_export(
     export_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     export = db.query(Export).filter(Export.id == export_id).first()
     if not export:
@@ -1640,7 +1640,7 @@ def download_export(
 
 @router.post("/exports/purge-expired")
 @router.post("/api/v1/exports/purge-expired")
-def purge_expired_exports_endpoint(db: Session = Depends(get_db)):
+def purge_expired_exports_endpoint(db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
     now = datetime.now(timezone.utc)
     expired = (
         db.query(Export)
@@ -1670,7 +1670,7 @@ def purge_expired_exports_endpoint(db: Session = Depends(get_db)):
 def archive_export(
     export_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     export = db.query(Export).filter(Export.id == export_id).first()
     if not export:

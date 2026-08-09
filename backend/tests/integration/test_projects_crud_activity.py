@@ -248,6 +248,7 @@ class TestLifecycle:
         r = client.patch(
             f"/api/v1/projects/{pid}/status",
             json={"status": "En_traitement"},
+            headers=self.a["headers"],
         )
         assert r.status_code == 200, r.text
         # Le GET du projet reflète le nouveau statut
@@ -256,7 +257,7 @@ class TestLifecycle:
 
     def test_get_project_status(self):
         pid = _create_project_via_api(self.a["headers"], self.a["studio_id"])["id"]
-        r = client.get(f"/api/v1/projects/{pid}/status")
+        r = client.get(f"/api/v1/projects/{pid}/status", headers=self.a["headers"])
         assert r.status_code == 200
         assert r.json()["status"] == "Cree"
 
