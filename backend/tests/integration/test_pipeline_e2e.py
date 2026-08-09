@@ -1,12 +1,22 @@
 import uuid
-import os, uuid, subprocess
+import os
+import subprocess
+import pytest
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.core.config import get_settings
 from app.models import Studio, Project, MediaAsset, PipelineJob
 from app.core.password import hash_password
-from app.tasks.pipeline import pipeline_extract_normalize, pipeline_transcribe_diarize, pipeline_generate_rythmo, notify_completion
+from app.tasks.pipeline import (
+    pipeline_extract_normalize,
+    pipeline_transcribe_diarize,
+    pipeline_generate_rythmo,
+    notify_completion,
+)
+from tests.integration._infra import PIPELINE_SKIP_REASON, pipeline_infra_ready
 
+
+@pytest.mark.skipif(not pipeline_infra_ready(), reason=PIPELINE_SKIP_REASON)
 def test_pipeline_e2e_prêt_pour_édition():
     # Utilise un média de test existant (audio extrait précédemment)
     video_path = "/tmp/test_video_piste.mp4"

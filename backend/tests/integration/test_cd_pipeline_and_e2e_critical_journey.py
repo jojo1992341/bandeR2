@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from app.main import app
 from app.core.database import SessionLocal
+from tests.integration._infra import PIPELINE_SKIP_REASON, pipeline_infra_ready
 from app.core.password import hash_password
 from app.core.auth_handler import create_access_token
 from app.models import (
@@ -241,6 +242,7 @@ def test_cd_pipeline_package_release_deploy_recette_and_rollback_ready():
         cleanup_cd_test_data(test_releases_dir, test_recette_dir)
 
 
+@pytest.mark.skipif(not pipeline_infra_ready(), reason=PIPELINE_SKIP_REASON)
 def test_e2e_critical_journey_import_pipeline_editing_export_on_recette():
     """
     CONDITION D'ACHÈVEMENT E2E (§19.2 / §19.3) :

@@ -1,19 +1,24 @@
 import uuid
+import pytest
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.config import get_settings
 from app.tasks.forced_alignment import forced_alignment
 from app.models import TranscriptSegment, Word, MediaAsset
+from tests.integration._infra import PIPELINE_SKIP_REASON, pipeline_infra_ready
 
+
+@pytest.mark.skipif(not pipeline_infra_ready(), reason=PIPELINE_SKIP_REASON)
 def test_forced_alignment_word_level():
     # Vérifie alignement forcé : chaque mot possède start < end cohérent
     # Note : nécessite DB active et audio de test (ex. /tmp/test_video_piste.wav)
     # Sur cible Windows : aligne sur segment Whisper et persiste Word
     result = forced_alignment.run(
         media_path="/tmp/test_video_piste.mp4",
+        media_id=str(uuid.uuid4()),
         segment_id=str(uuid.uuid4()),
-        language="fr"
+        language="fr",
     )
     # Le résultat doit indiquer succès et nombre de mots alignés
     assert result is not None

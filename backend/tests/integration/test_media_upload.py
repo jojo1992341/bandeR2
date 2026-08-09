@@ -2,6 +2,7 @@ import uuid
 import tempfile
 import os
 import boto3
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from app.main import app
@@ -9,6 +10,7 @@ from app.core.database import SessionLocal
 from app.core.auth_handler import create_access_token
 from app.core.password import hash_password
 from app.models import User, Project, Studio, StudioMembership
+from tests.integration._infra import PIPELINE_SKIP_REASON, pipeline_infra_ready
 
 client = TestClient(app)
 
@@ -33,6 +35,7 @@ def setup_users(db: Session):
     db.refresh(project)
     return user, project
 
+@pytest.mark.skipif(not pipeline_infra_ready(), reason=PIPELINE_SKIP_REASON)
 def test_media_upload_flow():
     db = get_db()
     project = None

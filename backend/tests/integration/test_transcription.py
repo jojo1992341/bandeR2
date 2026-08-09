@@ -1,12 +1,16 @@
-import os
 import uuid
+import os
 import subprocess
+import pytest
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.models import MediaAsset, TranscriptSegment, Studio, Project, User
 from app.core.password import hash_password
 from app.tasks.transcription import transcribe_audio
+from tests.integration._infra import PIPELINE_SKIP_REASON, pipeline_infra_ready
 
+
+@pytest.mark.skipif(not pipeline_infra_ready(), reason=PIPELINE_SKIP_REASON)
 def test_transcription_fr_small():
     # Créer un extrait audio court (simulé FR pour la pipeline)
     audio_path = "/tmp/test_fr_audio.wav"

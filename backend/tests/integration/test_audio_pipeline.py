@@ -2,7 +2,11 @@ import os
 import tempfile
 import subprocess
 from pathlib import Path
+import pytest
+from tests.integration._infra import PIPELINE_SKIP_REASON, pipeline_infra_ready
 
+
+@pytest.mark.skipif(not pipeline_infra_ready(), reason=PIPELINE_SKIP_REASON)
 def test_pipeline_audio_extraction_and_normalization():
     """Intégration : vidéo de test → extraction multi-pistes + normalisation EBU R128 → bucket traitement."""
     # Créer vidéo de test avec plusieurs pistes audio (simulé par deux flux audio)
