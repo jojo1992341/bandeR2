@@ -1,16 +1,25 @@
-import uuid
+"""
+Alignement forcé pour RythmoAI (§8.2.7 CDC)
+
+Alignement temporel précis des segments de transcription.
+"""
+
+from __future__ import annotations
+
 import os
 import subprocess
-from celery import Celery
-from sqlalchemy.orm import Session
-from app.core.database import SessionLocal
+import uuid
+from typing import Any
+
+from app.celery_app import celery_app  # Application Celery centralisée
 from app.core.config import get_settings
-from app.models import TranscriptSegment
+from app.core.database import SessionLocal
+from app.models import MediaAsset, Project, Studio, TranscriptSegment
+from sqlalchemy.orm import Session
 
-celery_app = Celery("rythmoai", broker="redis://localhost:6379/0")
 
-
-def _ffmpeg_path():
+def _ffmpeg_path() -> str:
+    """Retourne le chemin vers ffmpeg."""
     import shutil
 
     p = shutil.which("ffmpeg")
@@ -21,7 +30,8 @@ def _ffmpeg_path():
     return p or "ffmpeg"
 
 
-def _load_model():
+def _load_model() -> Any:
+    """Charge le modèle Whisper pour l'alignement."""
     from faster_whisper import WhisperModel
     import shutil
 
@@ -40,8 +50,22 @@ def _load_model():
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
 def forced_alignment(
-    self, media_path: str, segment_id: str = None, language: str = "fr"
-):
+    self,
+    media_path: str,
+    segment_id: str | None = None,
+    language: str = "fr",
+) -> dict[str, Any]:
+    """
+    Alignement forcé des segments de transcription (§8.2.7).
+
+    Args:
+        media_path: Chemin vers le fichier audio.
+        segment_id: ID du segment (optionnel).
+        language: Langue de la transcription.
+
+    Returns:
+        dict: Résultats de l'alignement.
+    """
     try:
         model = _load_model()
         segments_raw, info = model.transcribe(
@@ -56,7 +80,7 @@ def forced_alignment(
     except Exception:
 
         class _DummySegment:
-            def __init__(self):
+            def __init__(self) -> None:
                 self.text = "Mot aligné test"
                 self.start = 0.0
                 self.end = 1.0
@@ -68,8 +92,6 @@ def forced_alignment(
 
     db = SessionLocal()
     try:
-        from app.models import MediaAsset, Project, Studio
-
         media = db.query(MediaAsset).first()
         if not media:
             studio = Studio(id=uuid.uuid4(), name="Temp Studio FA", plan="pro")
@@ -116,6 +138,7 @@ def forced_alignment(
         db.commit()
     finally:
         db.close()
+
     return {
         "media_path": media_path,
         "segment_id": segment_id,

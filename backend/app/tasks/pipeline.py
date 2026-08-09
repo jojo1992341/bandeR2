@@ -1,16 +1,18 @@
 import os
 import logging
-from celery import Celery, chain, chord, group
+from typing import Any
+
+from celery import chain, chord, group
 from celery.exceptions import MaxRetriesExceededError
 
-celery_app = Celery("rythmoai", broker="redis://localhost:6379/0")
+from app.celery_app import celery_app  # Application Celery centralisée
 
 # Configuration résilience (§6.4 — retry 3, backoff exponentiel, circuit breaker, DLQ)
 celery_app.conf.task_acks_late = True
 celery_app.conf.task_reject_on_worker_lost = True
 celery_app.conf.task_default_queue = "celery"
 
-# Configuration file Dead-Letter (DLQ §6.4 / §10.3)
+#Configuration file Dead-Letter (DLQ §6.4 / §10.3)
 celery_app.conf.task_routes = {
     "app.tasks.pipeline.*": {"queue": "celery"},
     "app.tasks.dlq.*": {"queue": "dead_letter"},

@@ -1,20 +1,34 @@
+"""
+Transcription audio pour RythmoAI (§8.2.1 CDC)
+
+Transcription des fichiers audio avec Whisper Large v3.
+"""
+
+from __future__ import annotations
+
 import os
 import uuid
-import subprocess
-from celery import Celery
+from typing import Any
+
+from app.celery_app import celery_app  # Application Celery centralisée
+
+
 try:
     from faster_whisper import WhisperModel
 except ImportError:
+
     class WhisperModel:  # type: ignore
-        def __init__(self, *a, **kw):
+        """Classe de fallback si faster_whisper n'est pas installé."""
+
+        def __init__(self, *a: Any, **kw: Any) -> None:
             pass
-        def transcribe(self, *a, **kw):
+
+        def transcribe(self, *a: Any, **kw: Any) -> Any:
             raise RuntimeError("faster_whisper not installed - fallback to dummy")
 
-celery_app = Celery("rythmoai", broker="redis://localhost:6379/0")
 
-
-def _get_device_and_compute():
+def _get_device_and_compute() -> tuple[str, str]:
+    """Détermine le device et le type de calcul pour Whisper."""
     try:
         import torch
 
@@ -26,8 +40,17 @@ def _get_device_and_compute():
 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
-def transcribe_audio(self, media_path: str, media_id: str):
-    """Transcription Whisper Large v3 (§8.2.1) — découpage chunks 30s, langage FR."""
+def transcribe_audio(self, media_path: str, media_id: str) -> dict[str, Any]:
+    """
+    Transcription Whisper Large v3 (§8.2.1) — découpage chunks 30s, langage FR.
+
+    Args:
+        media_path: Chemin vers le fichier audio à transcrire.
+        media_id: ID du média (UUID).
+
+    Returns:
+        dict: Résultats de la transcription.
+    """
     device, compute_type = _get_device_and_compute()
     model_name = os.getenv("WHISPER_MODEL", "large-v3")
 
@@ -45,7 +68,7 @@ def transcribe_audio(self, media_path: str, media_id: str):
     except Exception:
         # Fallback hors-ligne pour environnements sans accès HF Hub / modèle local absent
         class _DummySegment:
-            def __init__(self):
+            def __init__(self) -> None:
                 self.text = "Texte audio de test pour transcription."
                 self.start = 0.0
                 self.end = 2.5
@@ -56,6 +79,7 @@ def transcribe_audio(self, media_path: str, media_id: str):
         language = "fr"
 
     from sqlalchemy.orm import Session
+
     from app.core.database import SessionLocal
     from app.models import TranscriptSegment
 
