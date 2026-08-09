@@ -8,6 +8,7 @@ import uuid
 
 from app.core.database import get_db
 from app.core.password import hash_password, verify_password
+from app.core.rate_limit import auth_rate_limit
 from app.core.auth_handler import (
     create_access_token,
     create_refresh_token,
@@ -72,7 +73,7 @@ class RevokeSessionsIn(BaseModel):
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-def register(data: RegisterIn, db: Session = Depends(get_db)):
+def register(data: RegisterIn, db: Session = Depends(get_db), _rl=Depends(auth_rate_limit)):
     if check_pwned_password(data.password):
         raise HTTPException(
             status_code=400,
@@ -94,7 +95,7 @@ def register(data: RegisterIn, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
-def login(data: LoginIn, request: Request, db: Session = Depends(get_db)):
+def login(data: LoginIn, request: Request, db: Session = Depends(get_db), _rl=Depends(auth_rate_limit)):
     ip = get_client_ip(request)
     country = get_client_country(request)
     user = db.query(User).filter(User.email == data.email).first()

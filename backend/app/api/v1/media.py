@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.auth_handler import verify_token
 from app.core.rbac import get_current_user_payload, require_role
+from app.core.rate_limit import upload_rate_limit_dep
 from app.core.storage import generate_upload_url, get_s3_client
 from app.core.config import get_settings
 from app.models import MediaAsset, Project
@@ -87,6 +88,7 @@ def upload_url(
     data: UploadUrlIn,
     payload: dict = Depends(get_current_user_payload),
     db: Session = Depends(get_db),
+    _rl=Depends(upload_rate_limit_dep),
 ):
     user_id = uuid.UUID(payload.get("sub"))
     project_check = db.query(Project).filter(Project.id == project_id).first()

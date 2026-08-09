@@ -4,6 +4,7 @@ from typing import Dict, List
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, get_db
+from app.core.rate_limit import pipeline_rate_limit_dep
 from app.models import PipelineJob, Project
 from pydantic import BaseModel
 
@@ -109,7 +110,7 @@ async def ws_pipeline(websocket: WebSocket, project_id: uuid.UUID):
         ws_connections.setdefault(key, []).remove(websocket)
 
 @router.get("/projects/{project_id}/pipeline/status", response_model=PipelineStatusOut)
-def pipeline_status(project_id: uuid.UUID, db: Session = Depends(get_db)):
+def pipeline_status(project_id: uuid.UUID, db: Session = Depends(get_db), _rl=Depends(pipeline_rate_limit_dep)):
     job = db.query(PipelineJob).filter(PipelineJob.project_id == project_id).order_by(PipelineJob.updated_at.desc()).first()
     if not job:
         raise HTTPException(status_code=404, detail="Pipeline non trouvé")

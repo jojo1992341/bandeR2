@@ -100,7 +100,11 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     # Champ `detail` conservé pour rétrocompatibilité (anciens clients/tests) ;
     # le contrat canonique reste {code, message, details, request_id}.
     body["detail"] = detail
-    return _json(exc.status_code, body, request_id)
+    # Préserver les en-têtes de la réponse (ex. Retry-After sur 429).
+    headers = {"X-Request-ID": request_id}
+    if getattr(exc, "headers", None):
+        headers.update(exc.headers)
+    return JSONResponse(status_code=exc.status_code, content=body, headers=headers)
 
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError):

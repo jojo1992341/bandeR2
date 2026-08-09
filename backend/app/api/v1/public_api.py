@@ -48,6 +48,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.rbac import get_current_user_payload, is_risky_role
+from app.core.rate_limit import public_api_rate_limit
 from app.models import (
     ApiKey,
     Export,
@@ -427,6 +428,7 @@ def public_get_job(
     job_id: uuid.UUID,
     api_key: ApiKey = Depends(require_scopes("project:read")),
     db: Session = Depends(get_db),
+    _rl=Depends(public_api_rate_limit),
 ):
     job = db.query(PipelineJob).filter(PipelineJob.id == job_id).first()
     if not job:

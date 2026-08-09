@@ -83,6 +83,24 @@ class Settings(BaseSettings):
         description="URL de connexion Redis",
     )
 
+    # Rate limiting (§10.1) — quotas Redis par catégorie
+    RATE_LIMIT_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Active le rate limiting sur les endpoints sensibles (auth, upload, "
+            "pipeline, export, API publique). Désactivé par défaut pour ne pas "
+            "perturber les tests ; à activer (True) en production."
+        ),
+    )
+    RATE_LIMIT_FAIL_OPEN: bool = Field(
+        default=True,
+        description=(
+            "Politique de repli si Redis est indisponible : True = fail-open "
+            "(autorise, disponibilité prioritaire) ; False = fail-closed "
+            "(refuse par sécurité)."
+        ),
+    )
+
     # ============================================================
     # Stockage S3 / MinIO (§12.2 Assets média)
     # ============================================================

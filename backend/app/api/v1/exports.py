@@ -12,6 +12,7 @@ from typing import Optional
 
 from app.core.database import get_db
 from app.core.rbac import get_optional_user_payload, is_risky_role
+from app.core.rate_limit import export_rate_limit_dep
 from app.core.audit import record_audit_log, check_download_anomalies
 from app.models import Project, MediaAsset, Replica, Export, Studio
 
@@ -1348,6 +1349,7 @@ def create_export(
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db),
     payload: Optional[dict] = Depends(get_optional_user_payload),
+    _rl=Depends(export_rate_limit_dep),
 ):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
