@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.v1 import (
     auth,
     users,
@@ -35,7 +37,13 @@ from app.api.v1 import (
     tasks,
 )
 from app.core.config import get_settings
+from app.core.errors import (
+    http_exception_handler,
+    unhandled_exception_handler,
+    validation_exception_handler,
+)
 from app.core.logging import logger
+from app.core.request_context import new_request_id, reset_request_id, set_request_id
 
 settings = get_settings()
 
@@ -70,6 +78,31 @@ async def security_transport_headers(request: Request, call_next):
             content={"detail": "TLS 1.3 obligatoire en transit (§15.4)"},
         )
     return response
+
+
+# §10.1 — Corrélation des requêtes : génère/propage un request_id (contextvar),
+# l'expose dans l'en-tête X-Request-ID et les logs structurés. Déclaré en dernier
+# afin d'être le middleware le plus externe (englobe la gestion d'erreurs).
+@app.middleware("http")
+async def correlation_middleware(request: Request, call_next):
+    rid = request.headers.get("x-request-id") or new_request_id()
+    token = set_request_id(rid)
+    try:
+        request.state.request_id = rid
+        response = await call_next(request)
+        logger.info(
+            "%s %s -> %s", request.method, request.url.path, response.status_code
+        )
+        response.headers["X-Request-ID"] = rid
+        return response
+    finally:
+        reset_request_id(token)
+
+
+# §10.1 — Schéma d'erreur commun {code, message, details, request_id}
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
 
 
 @app.get("/health")
