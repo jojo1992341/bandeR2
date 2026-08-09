@@ -1,0 +1,74 @@
+# =============================================================================
+# RythmoAI Backend - Dépendances IA CPU (§8.2, §18.4 CDC)
+# =============================================================================
+# Moteurs d'Intelligence Artificielle fonctionnant sur CPU
+# Installation complémentaire aux requirements.txt
+#
+# Utilisation:
+#   pip install -r requirements.txt
+#   pip install -r requirements-ai-cpu.txt
+#
+# Ce profil active:
+# - Transcription Whisper (CPU)
+# - Détection émotionnelle ( wav2vec2 CPU)
+# - VAD Silero (CPU)
+# - Séparation de sources spectral (CPU)
+# - Alignement WhisperX (CPU)
+# - Détection intention NLP (CPU)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Deep Learning CPU (§8.2)
+# -----------------------------------------------------------------------------
+torch>=2.2.0
+torchaudio>=2.2.0
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# -----------------------------------------------------------------------------
+# Transcription vocale (§8.2.1)
+# -----------------------------------------------------------------------------
+openai-whisper>=20231117
+
+# -----------------------------------------------------------------------------
+# Détection émotionnelle acoustique (§8.2.5)
+# -----------------------------------------------------------------------------
+transformers>=4.35.0
+librosa>=0.10.0
+
+# -----------------------------------------------------------------------------
+# VAD - Voice Activity Detection (§8.2.3)
+# -----------------------------------------------------------------------------
+silero-vad>=5.1.0
+
+# -----------------------------------------------------------------------------
+# NLP & Analyse intention (§8.2.6)
+# -----------------------------------------------------------------------------
+spacy>=3.7.0
+fr-core-news-sm>=3.7.0
+# spacy est utilisé pour le NLP français
+# Download model: python -m spacy download fr_core_news_sm
+
+# -----------------------------------------------------------------------------
+# Phonétique & Alignement (§8.2.7)
+# -----------------------------------------------------------------------------
+phonemizer>=2.2.0
+g2p-en>=2.1.0
+
+# -----------------------------------------------------------------------------
+# Séparation de sources spectral (§12.1, CPU)
+# -----------------------------------------------------------------------------
+# Le backend spectral utilise numpy/scipy (déjà dans requirements.txt)
+# démus est omis (GPU requis, voir requirements-ai-gpu.txt)
+
+# -----------------------------------------------------------------------------
+# Diarisation (§8.2.4, CPU avec limitations)
+# -----------------------------------------------------------------------------
+pyannote.audio>=3.0.0
+# Note: pyannote.audio fonctionne sur CPU mais avec des performances réduites
+# Pour de meilleures performances, utiliser le profil GPU
+
+# -----------------------------------------------------------------------------
+# Outils audio
+# -----------------------------------------------------------------------------
+soundfile>=0.12.0
+argon2-cffi>=23.1.0  # déjà présent, mais explicite pour clarté

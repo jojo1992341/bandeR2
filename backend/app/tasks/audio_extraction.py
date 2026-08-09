@@ -1,19 +1,29 @@
+"""
+Extraction audio pour RythmoAI (§11.2, §13.1 CDC)
+
+Extraction des pistes audio multi-pistes depuis des fichiers vidéo.
+"""
+
+from __future__ import annotations
+
 import os
+import shutil
 import subprocess
 import uuid
-from celery import Celery
+from typing import Any
+
 import boto3
+
+from app.celery_app import celery_app  # Application Celery centralisée
 from app.core.config import get_settings
 
-celery_app = Celery("rythmoai", broker="redis://localhost:6379/0")
 
 # Bucket de traitement (S3-compatible)
 PROCESSING_BUCKET = "rythmoai-processing"
 
-import shutil
 
-
-def _ffmpeg_path():
+def _ffmpeg_path() -> str:
+    """Retourne le chemin vers ffmpeg."""
     p = shutil.which("ffmpeg")
     if p is None:
         for candidate in ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg"]:
@@ -22,7 +32,8 @@ def _ffmpeg_path():
     return p or "ffmpeg"
 
 
-def _ffprobe_path():
+def _ffprobe_path() -> str:
+    """Retourne le chemin vers ffprobe."""
     p = shutil.which("ffprobe")
     if p is None:
         for candidate in ["/usr/bin/ffprobe", "/usr/local/bin/ffprobe"]:
@@ -31,7 +42,8 @@ def _ffprobe_path():
     return p or "ffprobe"
 
 
-def _run_ffmpeg(cmd: list, timeout: int = 300):
+def _run_ffmpeg(cmd: list[str], timeout: int = 300) -> subprocess.CompletedProcess:
+    """Exécute une commande FFmpeg."""
     result = subprocess.run(
         cmd,
         capture_output=True,
@@ -44,6 +56,7 @@ def _run_ffmpeg(cmd: list, timeout: int = 300):
 
 
 def _detect_audio_tracks(video_path: str) -> int:
+    """Détecte le nombre de pistes audio dans un fichier vidéo."""
     try:
         import av
 
@@ -52,6 +65,7 @@ def _detect_audio_tracks(video_path: str) -> int:
             return max(len(audio_streams), 1)
     except Exception:
         pass
+    
     result = subprocess.run(
         [
             _ffprobe_path(),
@@ -66,6 +80,7 @@ def _detect_audio_tracks(video_path: str) -> int:
         capture_output=True,
         text=True,
     )
+    
     audio_indices = [
         line
         for line in result.stdout.strip().splitlines()
@@ -79,10 +94,11 @@ def _detect_audio_tracks(video_path: str) -> int:
                 indices.add(int(parts[1]))
             except ValueError:
                 pass
-    return max(len(indices), 1)  # au moins 1 piste si fichier valide
+    return max(len(indices), 1)
 
 
-def _upload_to_processing(local_path: str, key: str):
+def _upload_to_processing(local_path: str, key: str) -> None:
+    """Upload un fichier vers le bucket de traitement S3."""
     settings = get_settings()
     s3 = boto3.client(
         "s3",
@@ -104,12 +120,25 @@ def _upload_to_processing(local_path: str, key: str):
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
 def extract_audio(
     self,
-    video_path: str = None,
-    media_path: str = None,
+    video_path: str | None = None,
+    media_path: str | None = None,
     output_dir: str = "/tmp/rythmoai_audio",
-) -> dict:
-    """Extraction des pistes audio (multi-pistes §11.2) → WAV 16 kHz mono (§13.1)."""
+) -> dict[str, Any]:
+    """
+    Extraction des pistes audio (multi-pistes §11.2) → WAV 16 kHz mono (§13.1).
+
+    Args:
+        video_path: Chemin vers le fichier vidéo.
+        media_path: Alias pour video_path.
+        output_dir: Répertoire de sortie.
+
+    Returns:
+        dict: Informations sur les pistes extraites.
+    """
     path = media_path or video_path
+    if path is None:
+        raise ValueError("video_path ou media_path est requis")
+    
     os.makedirs(output_dir, exist_ok=True)
     basename = os.path.basename(path)
     name_root = os.path.splitext(basename)[0]

@@ -11,6 +11,13 @@ from .speaker import Speaker
 from .replica import Replica
 from .replica_history import ReplicaHistory
 from .rythmo_version import RythmoVersion
+from .rythmo_band import RythmoBand, RythmoBandStatus
+from .subscription import (
+    Subscription,
+    SubscriptionUsage,
+    SubscriptionHistory,
+    Plan,
+)
 from .export import Export
 from .studio_invitation import StudioInvitation
 from .comment import Comment

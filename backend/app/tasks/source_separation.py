@@ -1,24 +1,16 @@
 """
-Tâche Celery de séparation de sources (§12.1, option de pipeline V2).
+Séparation de sources pour RythmoAI (§12.1 CDC)
 
-Isole la piste « dialogue » d'un mixage complet (dialogue/musique/effets) afin
-d'améliorer la transcription (WER) sur les extraits à forte présence musicale.
-
-Activable :
-  * variable d'env ``SOURCE_SEPARATION_BACKEND`` = ``spectral`` | ``demucs``
-  * ou ``FEATURE_SOURCE_SEPARATION=1`` (backend par défaut ``auto``)
-  * ou ``enable_source_separation=True`` passé dans les options du pipeline
+Séparation du dialogue, musique et effets sonores.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional
 
-from celery import Celery
-
-celery_app = Celery("rythmoai", broker="redis://localhost:6379/0")
+from app.celery_app import celery_app  # Application Celery centralisée
 
 logger = logging.getLogger("rythmoai")
 
@@ -28,20 +20,20 @@ def separate_sources(
     self,
     media_path: str,
     output_dir: str = "/tmp/rythmoai_separation",
-    backend: Optional[str] = None,
-    media_id: Optional[str] = None,
-) -> dict:
-    """Sépare un mixage en dialogue / musique / effets et retourne les chemins.
+    backend: str | None = None,
+    media_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Séparation d'un mixage en dialogue / musique / effets (§12.1).
 
-    Retourne un dict compatible avec le pipeline :
-        {
-            "input_path": ...,
-            "dialogue_path": ...,
-            "stems": {"dialogue": path, "music": path, "effects": path},
-            "backend": "spectral" | "demucs",
-            "sample_rate": 16000,
-            "metrics": {...},
-        }
+    Args:
+        media_path: Chemin vers le fichier à séparer.
+        output_dir: Répertoire de sortie.
+        backend: Backend de séparation (spectral, demucs, auto).
+        media_id: ID du média.
+
+    Returns:
+        dict: Résultats de la séparation.
     """
     try:
         from app.ai.source_separator import (
@@ -94,13 +86,14 @@ def separate_sources(
 
 def maybe_separate_dialogue(
     media_path: str,
-    options: Optional[dict] = None,
+    options: dict[str, Any] | None = None,
     output_dir: str = "/tmp/rythmoai_separation",
 ) -> str:
-    """Raccourci synchrone utilisé par la tâche de transcription.
+    """
+    Raccourci synchrone utilisé par la tâche de transcription.
 
-    Retourne le chemin du WAV « dialogue » si la séparation est activée, sinon
-    le ``media_path`` d'origine. En cas d'échec, retourne l'original pour ne
+    Retourne le chemin du WAV "dialogue" si la séparation est activée, sinon
+    le media_path d'origine. En cas d'échec, retourne l'original pour ne
     pas casser le pipeline.
     """
     options = options or {}
@@ -112,6 +105,7 @@ def maybe_separate_dialogue(
             enabled = is_separation_enabled()
         except Exception:
             enabled = False
+
     if not enabled:
         return media_path
 
@@ -130,4 +124,5 @@ def maybe_separate_dialogue(
         )
     except Exception as exc:
         logger.warning("maybe_separate_dialogue fallback: %s", exc)
+
     return media_path
