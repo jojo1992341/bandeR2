@@ -38,7 +38,7 @@ class User(Base):
     )
 
     memberships: Mapped[List["StudioMembership"]] = relationship(
-        back_populates="user"
+        back_populates="user", cascade="all, delete-orphan"
     )
     comments_authored: Mapped[List["Comment"]] = relationship(
         back_populates="author"

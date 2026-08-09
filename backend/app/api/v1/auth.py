@@ -110,6 +110,21 @@ def login(data: LoginIn, request: Request, db: Session = Depends(get_db)):
         check_brute_force_anomalies(db, data.email, ip, country)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    # §16.2 — refus de connexion des comptes désactivés
+    if not getattr(user, "is_active", True):
+        record_audit_log(
+            db,
+            "login_failed",
+            user_id=user.id,
+            user_email=user.email,
+            ip_address=ip,
+            country_code=country,
+            details={"reason": "account_deactivated"},
+        )
+        raise HTTPException(
+            status_code=403, detail="Account deactivated"
+        )
+
     mfa_required = (
         getattr(user, "totp_enabled", False)
         or user.role in ("owner", "admin")
