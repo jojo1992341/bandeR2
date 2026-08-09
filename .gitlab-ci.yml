@@ -42,3 +42,25 @@ migrations_and_fixtures_postgres:
   script:
     - pip install -r backend/requirements.txt -r backend/requirements-dev.txt
     - PYTHONPATH=backend pytest backend/tests/integration/test_migrations_and_fixtures.py backend/tests/unit/test_migration_governance.py -v
+
+# §11.x — Tests d'intégration du pipeline IA (audio/média/transcription/E2E).
+# Provisionne l'infrastructure externe (ffmpeg + MinIO + faster_whisper) pour que
+# les 6 tests pipeline (ignorés sinon) s'exécutent réellement et passent.
+# MinIO tourne en conteneur sur localhost:9000 (les tests y accèdent en dur).
+pipeline_integration_tests:
+  stage: security_and_test
+  image: python:3.13
+  script:
+    - apt-get update -qq && apt-get install -y -qq ffmpeg wget ca-certificates
+    # MinIO (serveur + client mc) sur localhost:9000
+    - wget -q https://dl.min.io/server/minio/release/linux-amd64/minio -O /usr/local/bin/minio
+    - chmod +x /usr/local/bin/minio
+    - wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mc
+    - chmod +x /usr/local/bin/mc
+    - pip install -r backend/requirements.txt faster_whisper
+    - MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin minio server /tmp/minio-data --console-address ":9001" >/tmp/minio.log 2>&1 &
+    - sleep 4
+    - mc alias set local http://localhost:9000 minioadmin minioadmin
+    - mc mb local/rythmoai-media || true
+    - mc mb local/rythmoai-processing || true
+    - PYTHONPATH=backend pytest backend/tests/integration/test_audio_pipeline.py backend/tests/integration/test_media_upload.py backend/tests/integration/test_transcription.py backend/tests/integration/test_pipeline_e2e.py backend/tests/integration/test_forced_alignment.py backend/tests/integration/test_cd_pipeline_and_e2e_critical_journey.py -v
