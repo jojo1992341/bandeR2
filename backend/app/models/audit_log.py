@@ -3,6 +3,7 @@ from sqlalchemy import String, JSON, DateTime, func, Boolean, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, Session
 from .base import Base
+from app.core.uuid7 import uuid7
 from typing import Optional
 from datetime import datetime
 
@@ -15,7 +16,7 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid7
     )
     action: Mapped[str] = mapped_column(
         String(100), nullable=False, index=True

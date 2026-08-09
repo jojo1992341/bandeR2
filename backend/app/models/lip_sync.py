@@ -3,6 +3,7 @@ from sqlalchemy import Float, Integer, String, Boolean, DateTime, func, ForeignK
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
+from app.core.uuid7 import uuid7
 from datetime import datetime
 
 class LipSyncFrame(Base):
@@ -11,7 +12,7 @@ class LipSyncFrame(Base):
     """
     __tablename__ = "lip_sync_frames"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("media_assets.id", ondelete="CASCADE"), nullable=False, index=True)
     timestamp_ms: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     # Ouverture labiale normalisée 0.0 (fermé) à 1.0 (ouvert max)
@@ -32,7 +33,7 @@ class LipSyncResult(Base):
     """Résultat agrégé de synchronisation labiale pour un média (courbe + métadonnées)"""
     __tablename__ = "lip_sync_results"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("media_assets.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     fps: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     frame_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

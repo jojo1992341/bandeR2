@@ -3,10 +3,11 @@ from sqlalchemy import String, Integer, Numeric, DateTime, func, ForeignKey, Tex
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
+from app.core.uuid7 import uuid7
 
 class Word(Base):
     __tablename__ = "transcript_words"
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     segment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("transcript_segments.id"), nullable=False, index=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     start_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

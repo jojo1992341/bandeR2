@@ -10,6 +10,25 @@ from __future__ import annotations
 
 import asyncio
 import os
+
+# ---------------------------------------------------------------------------
+# Harnais de test : forcer SQLite en l'absence de base explicite.
+# La CI ne fournit pas de service PostgreSQL ; par défaut l'URL construite
+# pointerait vers un PostgreSQL injoignable. On utilise donc une base SQLite
+# partagée en mémoire pour toute la session de test. Si DATABASE_URL est
+# explicitement positionnée (ex. Postgres pour tests d'intégration), elle est
+# respectée.
+# ---------------------------------------------------------------------------
+if not os.environ.get("DATABASE_URL"):
+    os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+# Invalider un éventuel cache de settings chargé avant ce point.
+try:
+    from app.core.config import get_settings as _get_settings  # noqa: F401
+
+    _get_settings.cache_clear()
+except Exception:  # pragma: no cover - app pas encore importée
+    pass
+
 from typing import AsyncGenerator, Generator
 
 import pytest

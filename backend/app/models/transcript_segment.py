@@ -3,11 +3,12 @@ from sqlalchemy import String, Integer, Numeric, DateTime, func, ForeignKey, Tex
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
+from app.core.uuid7 import uuid7
 
 class TranscriptSegment(Base):
     __tablename__ = "transcript_segments"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     media_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("media_assets.id"), nullable=False, index=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     start_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

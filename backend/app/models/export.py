@@ -3,6 +3,7 @@ from sqlalchemy import String, Boolean, DateTime, func, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
+from app.core.uuid7 import uuid7
 from typing import Optional
 from datetime import datetime
 
@@ -10,7 +11,7 @@ from datetime import datetime
 class Export(Base):
     __tablename__ = "exports"
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid7
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

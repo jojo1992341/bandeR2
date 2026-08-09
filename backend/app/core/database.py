@@ -62,6 +62,14 @@ from app.models import (  # noqa: F401
     ApiKey,
     WebhookEndpoint,
     WebhookDelivery,
+    # §16.1–§16.3
+    UserPreferences,
+    ProjectFolder,
+    ProjectTag,
+    project_tags,
+    Team,
+    TeamMembership,
+    Task,
 )
 
 
@@ -248,19 +256,21 @@ def get_async_session_factory(for_test: bool = False) -> async_sessionmaker[Asyn
 # ============================================================
 # Dépendances pour les routes FastAPI
 # ============================================================
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+def get_db() -> Generator:
     """
-    Dépendance FastAPI pour injecter une session de base de données asynchrone.
+    Dépendance FastAPI : injecte une session de base de données synchrone.
+
+    Toutes les routes utilisent l'API synchrone SQLAlchemy (`db.query()`),
+    aussi la dépendance produit-elle une `Session` synchrone (via `SessionLocal`).
 
     Yields:
-        AsyncSession: Session SQLAlchemy asynchrone.
+        Session: Session SQLAlchemy synchrone.
     """
-    factory = get_async_session_factory(for_test=False)
-    async with factory() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 async def get_test_db() -> AsyncGenerator[AsyncSession, None]:
@@ -309,27 +319,23 @@ async def database_session(for_test: bool = False) -> AsyncGenerator[AsyncSessio
 # ============================================================
 # Initialisation et migration
 # ============================================================
-async def init_db() -> None:
+def init_db() -> None:
     """
-    Initialise la base de données en créant tous les tables.
+    Initialise la base de données en créant toutes les tables.
 
     ATTENTION: Cette fonction est réservée aux tests unitaires.
     En production, utilisez Alembic pour les migrations.
     """
-    engine = get_engine(for_test=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    Base.metadata.create_all(bind=_get_sync_engine())
 
 
-async def init_test_db() -> None:
+def init_test_db() -> None:
     """
     Initialise la base de données de test en créant toutes les tables.
 
     Utilisée exclusivement pour les tests unitaires avec SQLite.
     """
-    engine = get_test_engine()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    Base.metadata.create_all(bind=_get_sync_engine())
 
 
 async def close_engine() -> None:
@@ -376,18 +382,34 @@ _sync_engine_cache: object = None
 
 def _get_sync_engine() -> object:
     """
-    Retourne le moteur synchrone pour compatibilité legacy.
-    Créé paresseivement au premier accès.
+    Retourne le moteur synchrone.
+
+    Toute la couche d'accès aux données (routes FastAPI, repositories, tests
+    d'intégration) utilise l'API synchrone de SQLAlchemy 2.0 (`db.query()` /
+    `Session`). Ce moteur synchrone est donc la source de données réelle de
+    l'application. Il est créé paresseusement au premier accès.
+
+    Pour SQLite (tests), `check_same_thread=False` permet l'usage depuis le
+    threadpool de FastAPI/TestClient ; `StaticPool` garantit qu'une base
+    `:memory:` est partagée entre toutes les sessions.
     """
     global _sync_engine_cache
     if _sync_engine_cache is not None:
         return _sync_engine_cache
 
     from sqlalchemy import create_engine as create_sync_engine
+    from sqlalchemy.pool import StaticPool
 
     url = _get_engine_url(for_test=False)
     sync_url = url.replace("+asyncpg", "").replace("+aiosqlite", "")
-    _sync_engine_cache = create_sync_engine(sync_url, future=True)
+
+    kwargs: dict = {"future": True}
+    if sync_url.startswith("sqlite"):
+        kwargs["connect_args"] = {"check_same_thread": False}
+        if ":memory:" in sync_url:
+            kwargs["poolclass"] = StaticPool
+
+    _sync_engine_cache = create_sync_engine(sync_url, **kwargs)
     return _sync_engine_cache
 
 
@@ -423,37 +445,37 @@ class _SessionLocalProxy:
 SessionLocal = _SessionLocalProxy()
 
 
-# engine - Proxy pour compatibilité avec les tests existants
-# Retourne le moteur asynchrone au premier accès
+# engine - Proxy pour compatibilité avec les tests existants.
+# Délègue au moteur SYNCHRONE (les routes/repositories/tests utilisent l'API
+# synchrone : `Base.metadata.create_all(bind=engine)`, `engine.connect()`, etc.).
 class _EngineProxy:
     """
-    Proxy pour le moteur asynchrone.
-    Permet aux tests existants d'utiliser 'engine' tout en utilisant
-    l'initialisation paresseuse.
+    Proxy pour le moteur synchrone.
+    Permet aux tests existants d'utiliser 'engine' avec une initialisation
+    paresseuse.
     """
 
     _engine = None
 
     def __getattr__(self, name):
         if self._engine is None:
-            self._engine = get_engine(for_test=False)
+            self._engine = _get_sync_engine()
         return getattr(self._engine, name)
 
     def dispose(self):
         if self._engine is not None:
-            # Pour compatibilité, dispose ne fait rien sur le proxy
-            # Les tests doivent utiliser dispose_all() ou await close_engine()
-            pass
+            try:
+                self._engine.dispose()
+            except Exception:
+                pass
 
     async def aiosync_dispose(self):
-        """Dispose asynchrone du moteur."""
-        if self._engine is not None:
-            await self._engine.dispose()
-            self._engine = None
+        """Dispose du moteur (compatibilité async)."""
+        self.dispose()
+        self._engine = None
 
 
 # Alias pour compatibilité - les tests peuvent utiliser engine.connect() etc.
-# Mais attention: les méthodes asynchrones doivent être awaitées
 engine = _EngineProxy()
 
 

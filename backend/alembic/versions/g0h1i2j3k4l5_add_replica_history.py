@@ -2,7 +2,7 @@
 from alembic import op
 import sqlalchemy as sa
 revision = 'g0h1i2j3k4l5'
-down_revision = 'f0a1b2c3d4e5'
+down_revision = 'f1a2b3c4d5e6'  # après la création de la table replicas
 branch_labels = None
 depends_on = None
 def upgrade():

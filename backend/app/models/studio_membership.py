@@ -3,6 +3,7 @@ from sqlalchemy import String, DateTime, func, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
+from app.core.uuid7 import uuid7
 
 
 class StudioMembership(Base):
@@ -10,7 +11,7 @@ class StudioMembership(Base):
     __table_args__ = (UniqueConstraint("studio_id", "user_id", name="uq_studio_user"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid7
     )
     studio_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("studios.id"), nullable=False

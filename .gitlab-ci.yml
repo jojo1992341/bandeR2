@@ -31,3 +31,14 @@ owasp_and_integration_tests:
   script:
     - pip install -r backend/requirements.txt pytest pytest-asyncio httpx pyotp requests
     - PYTHONPATH=backend pytest backend/tests/ -v
+
+# §9.7 — Industrialisation des migrations & fixtures.
+# Démarre un PostgreSQL 16 embarqué (pgserver), monte la chaîne Alembic depuis
+# une base vide jusqu'à `head`, charge les fixtures versionnées, effectue un
+# downgrade/upgrade supporté et valide l'intégrité des données.
+migrations_and_fixtures_postgres:
+  stage: security_and_test
+  image: python:3.13
+  script:
+    - pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+    - PYTHONPATH=backend pytest backend/tests/integration/test_migrations_and_fixtures.py backend/tests/unit/test_migration_governance.py -v

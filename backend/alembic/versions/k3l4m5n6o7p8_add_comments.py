@@ -14,10 +14,6 @@ def upgrade():
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()')),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()')),
     )
-    op.create_index('ix_comments_replica_id', 'comments', ['replica_id'])
-    op.create_index('ix_comments_author_id', 'comments', ['author_id'])
 
 def downgrade():
-    op.drop_index('ix_comments_author_id', table_name='comments')
-    op.drop_index('ix_comments_replica_id', table_name='comments')
     op.drop_table('comments')

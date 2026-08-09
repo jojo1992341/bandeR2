@@ -11,7 +11,7 @@ import os
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import Field, PostgresDsn, field_validator
+from pydantic import Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -110,6 +110,11 @@ class Settings(BaseSettings):
         default=False,
         description="Activation de la synchronisation labiale (§8.2.6, §11.4)",
     )
+    # Alias de compatibilité (historiquement référencé sous ce nom)
+    LIP_SYNC_ENABLED: bool = Field(
+        default=False,
+        description="Alias de FEATURE_LIP_SYNC_ENABLED (compatibilité)",
+    )
     LIP_SYNC_FPS: int = Field(
         default=10,
         description="FPS de capture pour la synchronisation labiale",
@@ -153,6 +158,26 @@ class Settings(BaseSettings):
 
         return f"{engine}://{user}:{password}@{host}:{port}/{db_name}"
 
+    @model_validator(mode="after")
+    def _sync_feature_flags_from_env(self):
+        """
+        Synchronise les feature flags explicites avec les variables d'env `FEATURE_*`
+        (§19.3) — permet d'activer une fonctionnalité via FEATURE_CRDT=1 /
+        FEATURE_LIP_SYNC=1 / FEATURE_SOURCE_SEPARATION=1, en plus des champs
+        `FEATURE_*_ENABLED` explicites.
+        """
+        truthy = ("1", "true", "yes", "on")
+        env_pairs = [
+            ("FEATURE_CRDT", "FEATURE_CRDT_ENABLED"),
+            ("FEATURE_LIP_SYNC", "FEATURE_LIP_SYNC_ENABLED"),
+            ("FEATURE_SOURCE_SEPARATION", "FEATURE_SOURCE_SEPARATION_ENABLED"),
+        ]
+        for env_name, field_name in env_pairs:
+            val = os.getenv(env_name)
+            if val is not None:
+                setattr(self, field_name, val.strip().lower() in truthy)
+        return self
+
     @field_validator("TEST_DATABASE_URL", mode="before")
     @classmethod
     def validate_test_url(cls, v: str) -> str:
@@ -182,6 +207,36 @@ class Settings(BaseSettings):
     def is_sqlite(self) -> bool:
         """Indique si le moteur de base configuré est SQLite."""
         return "sqlite" in self.DATABASE_URL
+
+    def is_feature_enabled(self, feature: str) -> bool:
+        """
+        Vérifie si une fonctionnalité est activée via son feature flag (§19.3).
+
+        Une fonctionnalité est activée si son flag explicite (champ
+        `FEATURE_*_ENABLED`) est True **ou** si la variable d'environnement
+        équivalente (`FEATURE_<NAME>` = 1/true/yes/on) est positionnée. La
+        lecture de l'environnement est dynamique (live) pour permettre de
+        basculer un flag en cours de session de test.
+
+        Args:
+            feature: nom de la fonctionnalité (ex. "crdt", "lip_sync",
+                     "source_separation"). La recherche est insensible à la
+                     casse et tolère "lipsync".
+
+        Returns:
+            True si la fonctionnalité est activée, False sinon.
+        """
+        key = (feature or "").strip().lower()
+        truthy = ("1", "true", "yes", "on")
+        env_var = f"FEATURE_{key.upper()}"
+        env_enabled = os.getenv(env_var, "").strip().lower() in truthy
+        mapping = {
+            "crdt": self.FEATURE_CRDT_ENABLED,
+            "lip_sync": self.FEATURE_LIP_SYNC_ENABLED,
+            "lipsync": self.FEATURE_LIP_SYNC_ENABLED,
+            "source_separation": self.FEATURE_SOURCE_SEPARATION_ENABLED,
+        }
+        return bool(mapping.get(key, False)) or env_enabled
 
 
 @lru_cache

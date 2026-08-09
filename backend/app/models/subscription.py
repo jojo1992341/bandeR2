@@ -14,6 +14,7 @@ Modèle:
 from __future__ import annotations
 
 import uuid
+from app.core.uuid7 import uuid7
 from datetime import datetime, timedelta
 from typing import Optional, List
 
@@ -132,7 +133,7 @@ class Subscription(Base):
     __tablename__ = "subscriptions"
     
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid7
     )
     studio_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("studios.id"), nullable=False, index=True
@@ -226,7 +227,7 @@ class SubscriptionUsage(Base):
     __tablename__ = "subscription_usages"
     
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid7
     )
     subscription_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("subscriptions.id"), nullable=False, index=True
@@ -307,7 +308,7 @@ class SubscriptionHistory(Base):
     __tablename__ = "subscription_history"
     
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid7
     )
     subscription_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("subscriptions.id"), nullable=False, index=True

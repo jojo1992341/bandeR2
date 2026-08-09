@@ -29,6 +29,10 @@ from app.api.v1 import (
     sso,
     crdt,
     public_api,
+    preferences,
+    organization,
+    teams,
+    tasks,
 )
 from app.core.config import get_settings
 from app.core.logging import logger
@@ -115,3 +119,9 @@ app.include_router(words.router, tags=["words-alt"])
 # §25.4 — API publique (intégrations ERP/plateformes de droits) + webhooks
 app.include_router(public_api.router, prefix="/api/v1", tags=["public-api"])
 app.include_router(public_api.router, tags=["public-api-alt"])
+
+# §16.1–§16.3 — Préférences, organisation de projets, équipes, tâches & activité
+app.include_router(preferences.router, prefix="/api/v1/users", tags=["preferences"])
+app.include_router(organization.router, prefix="/api/v1", tags=["organization"])
+app.include_router(teams.router, prefix="/api/v1", tags=["teams"])
+app.include_router(tasks.router, prefix="/api/v1", tags=["tasks-activity"])

@@ -13,6 +13,7 @@ Dans le futur, seul rythmo_band_id sera utilisé.
 from __future__ import annotations
 
 import uuid
+from app.core.uuid7 import uuid7
 from datetime import datetime
 from typing import List, TYPE_CHECKING, Optional
 
@@ -26,11 +27,16 @@ from sqlalchemy import (
     Text,
     JSON,
     Boolean,
+    Index,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+# JSON interopérable PostgreSQL (JSONB) / SQLite (JSON) pour les tests.
+# JSONB est requis côté PostgreSQL pour l'index GIN (§9.5).
+JSONVariant = JSON().with_variant(JSONB(), "postgresql")
 
 if TYPE_CHECKING:
     from .comment import Comment
@@ -42,15 +48,34 @@ if TYPE_CHECKING:
 class Replica(Base):
     __tablename__ = "replicas"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    # §9.5 — indexation performance :
+    #   - composite (rythmo_band_id, start_ms) pour le chargement de la timeline ;
+    #   - order_index pour le tri stable des répliques ;
+    #   - GIN sur typo_codes (JSONB) pour le filtrage typographique avancé.
+    __table_args__ = (
+        Index(
+            "ix_replicas_band_start_ms",
+            "rythmo_band_id",
+            "start_ms",
+        ),
+        Index("ix_replicas_order_index", "order_index"),
+        Index(
+            "ix_replicas_typo_codes_gin",
+            "typo_codes",
+            postgresql_using="gin",
+        ),
     )
-    # Relation vers la bande rythmo (NOUVEAU - §9.2)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid7
+    )
+    # Relation vers la bande rythmo (NOUVEAU - §9.2).
+    # Pas d'index simple dédié : l'index composite (rythmo_band_id, start_ms)
+    # ci-dessous couvre déjà la FK (préfixe gauche) ET le chargement timeline.
     rythmo_band_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("rythmo_bands.id"),
         nullable=True,
-        index=True
     )
     # media_id conservé pour migration progressive (déprécié dans le futur)
     media_id: Mapped[uuid.UUID] = mapped_column(
@@ -66,7 +91,7 @@ class Replica(Base):
     start_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     end_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    typo_codes: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    typo_codes: Mapped[dict | None] = mapped_column(JSONVariant, default=dict)
     confidence_score: Mapped[float] = mapped_column(
         Numeric(4, 3), nullable=True, default=0.0
     )

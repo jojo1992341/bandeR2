@@ -16,8 +16,6 @@ def upgrade():
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()')),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()')),
     )
-    op.create_index('ix_exports_project_id', 'exports', ['project_id'])
 
 def downgrade():
-    op.drop_index('ix_exports_project_id', table_name='exports')
     op.drop_table('exports')

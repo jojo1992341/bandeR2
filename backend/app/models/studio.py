@@ -3,6 +3,7 @@ from sqlalchemy import String, JSON, Integer, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
+from app.core.uuid7 import uuid7
 from typing import List
 
 
@@ -10,7 +11,7 @@ class Studio(Base):
     __tablename__ = "studios"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid7
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     plan: Mapped[str | None] = mapped_column(String(50), default="free")

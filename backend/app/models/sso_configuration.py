@@ -3,6 +3,7 @@ from sqlalchemy import String, Boolean, DateTime, func, ForeignKey, Text, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
+from app.core.uuid7 import uuid7
 from datetime import datetime
 from typing import Optional
 
@@ -14,7 +15,7 @@ class SsoConfiguration(Base):
     """
     __tablename__ = "sso_configurations"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     studio_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("studios.id", ondelete="CASCADE"), nullable=False, index=True, unique=True)
     
     # Provider : azure_ad, okta, google, generic

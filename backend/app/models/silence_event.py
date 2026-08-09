@@ -3,6 +3,7 @@ from sqlalchemy import String, Integer, Float, DateTime, JSON, func, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
+from app.core.uuid7 import uuid7
 from datetime import datetime
 from typing import Optional
 
@@ -19,7 +20,7 @@ class SilenceEvent(Base):
     __tablename__ = "silence_events"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid7
     )
     media_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

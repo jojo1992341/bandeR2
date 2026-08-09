@@ -13,6 +13,7 @@ Relations:
 from __future__ import annotations
 
 import uuid
+from app.core.uuid7 import uuid7
 from datetime import datetime
 from typing import List, TYPE_CHECKING
 
@@ -27,13 +28,14 @@ if TYPE_CHECKING:
     from .studio import Studio
     from .media_asset import MediaAsset
     from .rythmo_band import RythmoBand, RythmoBandStatus
+    from .project_organization import ProjectFolder, ProjectTag
 
 
 class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid7
     )
     studio_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("studios.id"), nullable=False, index=True
@@ -44,6 +46,13 @@ class Project(Base):
     status: Mapped[str] = mapped_column(
         String(50), default="Cree", index=True
     )  # §16.1 lifecycle
+    # §16.1 — dossier d'organisation (client, saison, diffuseur…)
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("project_folders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -61,6 +70,11 @@ class Project(Base):
         back_populates="project",
         cascade="all, delete-orphan",
         lazy="selectin"
+    )
+    # §16.1 — dossier et tags d'organisation
+    folder: Mapped["ProjectFolder | None"] = relationship()
+    tags: Mapped[List["ProjectTag"]] = relationship(
+        secondary="project_tags", lazy="selectin"
     )
 
     def get_master_band(self) -> "RythmoBand | None":

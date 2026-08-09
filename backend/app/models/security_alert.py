@@ -3,6 +3,7 @@ from sqlalchemy import String, JSON, DateTime, func, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
+from app.core.uuid7 import uuid7
 from typing import Optional
 
 
@@ -15,7 +16,7 @@ class SecurityAlert(Base):
     __tablename__ = "security_alerts"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid7
     )
     alert_type: Mapped[str] = mapped_column(
         String(100), nullable=False, index=True

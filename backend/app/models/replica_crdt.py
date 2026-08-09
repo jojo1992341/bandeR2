@@ -3,6 +3,7 @@ from sqlalchemy import String, Integer, DateTime, func, ForeignKey, Text, JSON, 
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
+from app.core.uuid7 import uuid7
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -40,7 +41,7 @@ class ReplicaCrdtOperation(Base):
     """
     __tablename__ = "replica_crdt_operations"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     replica_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("replicas.id", ondelete="CASCADE"), nullable=False, index=True)
     site_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     counter: Mapped[int] = mapped_column(Integer, nullable=False)

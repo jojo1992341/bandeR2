@@ -79,6 +79,7 @@ def upgrade() -> None:
     sa.Column('fps', sa.Integer(), nullable=True),
     sa.Column('resolution', sa.String(length=50), nullable=True),
     sa.Column('file_size_bytes', sa.BigInteger(), nullable=True),
+    sa.Column('status', sa.String(length=50), nullable=True, server_default=sa.text("'pending'")),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['project_id'], ['projects.id'], ),

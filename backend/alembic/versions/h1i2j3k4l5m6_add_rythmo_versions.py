@@ -15,7 +15,6 @@ def upgrade():
         sa.Column('created_by', sa.String(length=255), server_default='system'),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()')),
     )
-    op.create_index('ix_rythmo_versions_project_id', 'rythmo_versions', ['project_id'])
     op.create_index('ix_rythmo_versions_version_number', 'rythmo_versions', ['version_number'])
     op.create_unique_constraint('uq_project_version', 'rythmo_versions', ['project_id', 'version_number'])
 

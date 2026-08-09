@@ -19,10 +19,6 @@ def upgrade():
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()')),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()')),
     )
-    op.create_index('ix_studio_invitations_studio_id', 'studio_invitations', ['studio_id'])
-    op.create_index('ix_studio_invitations_email', 'studio_invitations', ['email'])
 
 def downgrade():
-    op.drop_index('ix_studio_invitations_email', table_name='studio_invitations')
-    op.drop_index('ix_studio_invitations_studio_id', table_name='studio_invitations')
     op.drop_table('studio_invitations')

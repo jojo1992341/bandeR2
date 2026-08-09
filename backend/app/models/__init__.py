@@ -31,3 +31,12 @@ from .feedback_log import AnonymizedCorrection
 from .sso_configuration import SsoConfiguration
 from .replica_crdt import ReplicaCrdtState, ReplicaCrdtOperation
 from .api_key import ApiKey, WebhookEndpoint, WebhookDelivery
+# §16.1–§16.3 — Préférences, organisation de projets, équipes, tâches
+from .user_preferences import UserPreferences
+from .project_organization import (
+    ProjectFolder,
+    ProjectTag,
+    project_tags,
+)
+from .team import Team, TeamMembership
+from .task import Task

@@ -12,6 +12,7 @@ TODO: Dans le futur, Replica.media_id sera déprécié au profit de rythmo_band_
 from __future__ import annotations
 
 import uuid
+from app.core.uuid7 import uuid7
 from datetime import datetime
 from typing import List, Optional
 
@@ -24,11 +25,15 @@ from sqlalchemy import (
     Text,
     JSON,
     Boolean,
+    Index,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+# JSON interopérable PostgreSQL (JSONB) / SQLite (JSON) pour les tests.
+JSONVariant = JSON().with_variant(JSONB(), "postgresql")
 
 
 class RythmoBandStatus:
@@ -52,8 +57,17 @@ class RythmoBand(Base):
     """
     __tablename__ = "rythmo_bands"
 
+    # §9.5 — index GIN sur les métadonnées IA brutes (JSONB) pour le filtrage.
+    __table_args__ = (
+        Index(
+            "ix_rythmo_bands_metadata_gin",
+            "metadata",
+            postgresql_using="gin",
+        ),
+    )
+
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid7
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False, index=True
@@ -90,7 +104,7 @@ class RythmoBand(Base):
     )
     band_metadata: Mapped[dict | None] = mapped_column(
         "metadata",
-        JSON,
+        JSONVariant,
         nullable=True,
         default=dict
     )

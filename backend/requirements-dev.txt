@@ -30,6 +30,15 @@ httpx>=0.26.0
 httpx2>=0.2.0  # Pour starlette.testclient (FastAPI)
 
 # -----------------------------------------------------------------------------
+# Tests RLS PostgreSQL (§9.6) — isolation multi-tenant au niveau moteur
+# -----------------------------------------------------------------------------
+# pgserver : PostgreSQL 16 embarqué pour les tests d'intégration RLS sans
+#            service externe ; psycopg2-binary : client synchrone pour les
+#            connexions multi-rôles du test d'isolation.
+pgserver>=0.1.3
+psycopg2-binary>=2.9.0
+
+# -----------------------------------------------------------------------------
 # Code Quality & Linting
 # -----------------------------------------------------------------------------
 ruff>=0.1.0
