@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.rbac import get_current_user_payload, get_optional_user_payload
+from app.core.rbac import _get_user_id, assert_studio_member, get_current_user_payload, get_current_user_payload
 from app.core.audit import record_audit_log
 from app.models import Studio, TypographicProfile
 from app.services.typographic_profile_service import TypographicProfileService, DEFAULT_CODES, DEFAULT_THRESHOLDS, validate_profile_payload
@@ -49,7 +49,7 @@ def _require_admin_or_owner(db: Session, payload: Optional[dict], studio_id: uui
         raise HTTPException(status_code=401, detail="Invalid user id")
     # check studio membership
     from app.models import StudioMembership, User
-    from app.core.rbac import normalize_role
+    from app.core.rbac import _get_user_id, assert_studio_member, normalize_role
     membership = db.query(StudioMembership).filter(StudioMembership.studio_id == studio_id, StudioMembership.user_id == user_id).first()
     if membership and normalize_role(membership.role) in ("owner", "admin"):
         return user_id
@@ -63,7 +63,7 @@ def _require_admin_or_owner(db: Session, payload: Optional[dict], studio_id: uui
 def get_typographic_profiles(
     studio_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
     studio = db.query(Studio).filter(Studio.id == studio_id).first()
     if not studio:
@@ -217,7 +217,7 @@ def get_typographic_profile(
     studio_id: uuid.UUID,
     profile_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
     studio = db.query(Studio).filter(Studio.id == studio_id).first()
     if not studio:

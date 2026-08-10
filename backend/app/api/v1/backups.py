@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.rbac import get_current_user_payload
+from app.core.rbac import _get_user_id, require_role, get_current_user_payload
 from app.core.backup_service import (
     create_daily_backup,
     restore_from_backup,
@@ -32,7 +32,7 @@ class BackupRestoreIn(BaseModel):
 def trigger_backup(
     data: BackupCreateIn = BackupCreateIn(),
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_current_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
     remote_dir = (
         Path(data.remote_dir)
@@ -53,7 +53,7 @@ def trigger_backup(
 def trigger_restore(
     data: BackupRestoreIn = BackupRestoreIn(),
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_current_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
     backup_path = None
     if data.backup_file:
@@ -90,7 +90,7 @@ def trigger_restore(
 def trigger_retention_prune(
     data: BackupCreateIn = BackupCreateIn(),
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_current_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
     count = enforce_backup_retention(
         DEFAULT_BACKUP_DIR, retention_days=data.retention_days

@@ -18,6 +18,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, De
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.core.rbac import get_current_user_payload, _get_user_id, assert_replica_access
 from app.models import Replica
 from app.services.replica_lock_manager import lock_manager
 
@@ -64,7 +65,10 @@ async def acquire_replica_lock(
     replica_id: uuid.UUID,
     data: LockAcquireIn,
     db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_user_payload),
 ):
+    _uid = _get_user_id(payload)
+    assert_replica_access(db, _uid, replica_id)
     """§16.4 — Tente d'acquérir un verrou d'édition sur une réplique."""
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
     if not replica:
@@ -111,7 +115,10 @@ async def release_replica_lock(
     replica_id: uuid.UUID,
     user_id: uuid.UUID,
     db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_user_payload),
 ):
+    _uid2 = _get_user_id(payload)
+    assert_replica_access(db, _uid2, replica_id)
     """§16.4 — Relâche un verrou d'édition (user_id en query param)."""
     project_id = _get_replica_project_id(replica_id, db)
 
@@ -133,7 +140,11 @@ async def release_replica_lock(
 async def replica_lock_heartbeat(
     replica_id: uuid.UUID,
     data: HeartbeatIn,
+    payload: dict = Depends(get_current_user_payload),
+    db: Session = Depends(get_db),
 ):
+    _uid3 = _get_user_id(payload)
+    assert_replica_access(db, _uid3, replica_id)
     """§16.4 — Renouvelle le TTL du verrou (le client doit envoyer toutes les ~10s)."""
     ok = lock_manager.heartbeat(replica_id=replica_id, user_id=data.user_id)
     return HeartbeatOut(ok=ok)
@@ -142,7 +153,9 @@ async def replica_lock_heartbeat(
 # ── REST : Statut du verrou ──────────────────────────────────
 
 @router.get("/replicas/{replica_id}/lock", response_model=dict)
-async def get_replica_lock_status(replica_id: uuid.UUID):
+async def get_replica_lock_status(replica_id: uuid.UUID, payload: dict = Depends(get_current_user_payload), db: Session = Depends(get_db)):
+    _uid4 = _get_user_id(payload)
+    assert_replica_access(db, _uid4, replica_id)
     """§16.4 — Retourne le statut du verrou sur une réplique."""
     lock = lock_manager.get_lock(replica_id)
     if lock:

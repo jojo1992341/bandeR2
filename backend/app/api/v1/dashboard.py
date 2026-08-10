@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, case, and_
 from typing import Optional, List
 from app.core.database import get_db
+from app.core.rbac import get_current_user_payload, _get_user_id, assert_studio_member
 from app.models import Studio, Project, PipelineJob, MediaAsset, Replica, Speaker, TranscriptSegment, Word
 from app.domain.rules.project_lifecycle import ProjectStatus, _resolve_status
 
@@ -171,6 +172,7 @@ def _serialize_project_row(p: Project, db: Session) -> dict:
 def get_studio_dashboard(
     studio_id: uuid.UUID,
     db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_user_payload),
 ):
     """
     §14.2.1 — Vue synthétique du dashboard pour un studio.
@@ -349,7 +351,10 @@ def list_studio_projects(
     page: int = Query(1, ge=1, description="Page (1-indexed)"),
     per_page: int = Query(50, ge=1, le=200, description="Résultats par page"),
     db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_user_payload),
 ):
+    _uid2 = _get_user_id(payload)
+    assert_studio_member(db, _uid2, studio_id)
     """
     §14.2.1 — Liste les projets d'un studio avec filtres par statut.
     """

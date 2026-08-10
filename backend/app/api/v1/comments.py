@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.core.database import get_db
-from app.core.auth_handler import verify_token
+from app.core.rbac import get_current_user_payload, _get_user_id, assert_replica_access, assert_studio_member
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.models import Comment, Replica, User
 
@@ -57,8 +57,10 @@ def _serialize_comment(c: Comment, db: Session) -> dict:
 def list_comments(
     replica_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: dict = Depends(_get_current_user_optional)
+    payload: dict = Depends(get_current_user_payload)
 ):
+    _uid = _get_user_id(payload)
+    assert_replica_access(db, _uid, replica_id)
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
     if not replica:
         raise HTTPException(status_code=404, detail="Réplique non trouvée")
@@ -70,8 +72,10 @@ def create_comment(
     replica_id: uuid.UUID,
     data: CommentCreateIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(_get_current_user_optional)
+    payload: dict = Depends(get_current_user_payload)
 ):
+    _uid2 = _get_user_id(payload)
+    assert_replica_access(db, _uid2, replica_id)
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
     if not replica:
         raise HTTPException(status_code=404, detail="Réplique non trouvée")
@@ -108,8 +112,13 @@ def create_comment(
 @router.get("/comments/{comment_id}", response_model=dict)
 def get_comment(
     comment_id: uuid.UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_user_payload)
 ):
+    _uid3 = _get_user_id(payload)
+    _c = db.query(Comment).filter(Comment.id == comment_id).first()
+    if _c:
+        assert_replica_access(db, _uid3, _c.replica_id)
     comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not comment:
         raise HTTPException(status_code=404, detail="Commentaire non trouvé")
@@ -119,8 +128,12 @@ def get_comment(
 def delete_comment(
     comment_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: dict = Depends(_get_current_user_optional)
+    payload: dict = Depends(get_current_user_payload)
 ):
+    _uid4 = _get_user_id(payload)
+    _c2 = db.query(Comment).filter(Comment.id == comment_id).first()
+    if _c2:
+        assert_replica_access(db, _uid4, _c2.replica_id)
     comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not comment:
         raise HTTPException(status_code=404, detail="Commentaire non trouvé")

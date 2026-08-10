@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.rbac import get_optional_user_payload
+from app.core.rbac import _get_user_id, assert_replica_access, assert_media_access, assert_project_access, get_current_user_payload
 from app.models import SilenceEvent, MediaAsset
 from app.services.silence_service import SilenceService
 
@@ -18,7 +18,7 @@ router = APIRouter()
 def get_media_silences(
     media_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     media = db.query(MediaAsset).filter(MediaAsset.id == media_id).first()
     if not media:
@@ -57,7 +57,7 @@ def get_media_silences(
 def detect_media_silences(
     media_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: Optional[dict] = Depends(get_current_user_payload),
 ):
     media = db.query(MediaAsset).filter(MediaAsset.id == media_id).first()
     if not media:

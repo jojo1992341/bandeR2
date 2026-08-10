@@ -3,8 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.auth_handler import verify_token
-from app.core.rbac import require_role, get_optional_user_payload
+from app.core.rbac import get_current_user_payload, _get_user_id, assert_project_access
 from app.models import Speaker, Project
 import uuid
 from typing import Optional
@@ -16,11 +15,17 @@ class SpeakerMergeIn(BaseModel):
     merge_into: uuid.UUID | None = None
 
 @router.get("/projects/{project_id}/speakers")
-def list_speakers(project_id: uuid.UUID, db: Session = Depends(get_db)):
+def list_speakers(project_id: uuid.UUID, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
+    _uid = _get_user_id(payload)
+    assert_project_access(db, _uid, project_id)
     return db.query(Speaker).filter(Speaker.project_id == project_id).all()
 
 @router.patch("/speakers/{speaker_id}")
-def patch_speaker(speaker_id: uuid.UUID, data: SpeakerMergeIn, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_optional_user_payload)):
+def patch_speaker(speaker_id: uuid.UUID, data: SpeakerMergeIn, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
+    _uid2 = _get_user_id(payload)
+    _sp = db.query(Speaker).filter(Speaker.id == speaker_id).first()
+    if _sp:
+        assert_project_access(db, _uid2, _sp.project_id)
     speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
     if not speaker:
         raise HTTPException(status_code=404, detail="Locuteur non trouvé")
