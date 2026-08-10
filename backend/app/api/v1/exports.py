@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.core.database import get_db
-from app.core.rbac import get_optional_user_payload, is_risky_role
+from app.core.rbac import _get_user_id, assert_project_access, assert_export_access, get_current_user_payload, is_risky_role
 from app.core.audit import record_audit_log, check_download_anomalies
 from app.models import Project, MediaAsset, Replica, Export, Studio
 
@@ -1347,8 +1347,10 @@ def create_export(
     data: ExportCreateIn = ExportCreateIn(),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
+    _uid = _get_user_id(payload)
+    assert_project_access(db, _uid, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Projet non trouvé")
@@ -1530,7 +1532,9 @@ def create_export(
 
 
 @router.get("/exports/{export_id}", response_model=dict)
-def get_export(export_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_export(export_id: uuid.UUID, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
+    _uid2 = _get_user_id(payload)
+    assert_export_access(db, _uid2, export_id)
     export = db.query(Export).filter(Export.id == export_id).first()
     if not export:
         raise HTTPException(status_code=404, detail="Export non trouvé")
@@ -1561,8 +1565,10 @@ def get_export(export_id: uuid.UUID, db: Session = Depends(get_db)):
 def download_export(
     export_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
+    _uid_a = _get_user_id(payload)
+    assert_export_access(db, _uid_a, export_id)
     export = db.query(Export).filter(Export.id == export_id).first()
     if not export:
         raise HTTPException(status_code=404, detail="Export non trouvé")
@@ -1638,7 +1644,7 @@ def download_export(
 
 @router.post("/exports/purge-expired")
 @router.post("/api/v1/exports/purge-expired")
-def purge_expired_exports_endpoint(db: Session = Depends(get_db)):
+def purge_expired_exports_endpoint(db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
     now = datetime.now(timezone.utc)
     expired = (
         db.query(Export)
@@ -1668,7 +1674,7 @@ def purge_expired_exports_endpoint(db: Session = Depends(get_db)):
 def archive_export(
     export_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
     export = db.query(Export).filter(Export.id == export_id).first()
     if not export:

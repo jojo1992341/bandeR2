@@ -5,7 +5,7 @@ from sqlalchemy import and_
 from typing import Optional, List
 import uuid
 from app.core.database import get_db
-from app.core.rbac import get_optional_user_payload
+from app.core.rbac import get_current_user_payload, _get_user_id, assert_replica_access
 from app.models import Replica, ReplicaHistory, MediaAsset, MediaAsset as _Media, Project as _Project, Studio
 from app.domain.rules.project_lifecycle import can_edit_replica
 
@@ -102,7 +102,10 @@ def _serialize_replica(r: Replica) -> dict:
 def get_replica(
     replica_id: uuid.UUID,
     db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_user_payload),
 ):
+    _uid = _get_user_id(payload)
+    assert_replica_access(db, _uid, replica_id)
     """Récupère une réplique (utile pour vérifier typo_codes §9.4)"""
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
     if not replica:
@@ -114,7 +117,7 @@ async def patch_replica(
     replica_id: uuid.UUID,
     data: ReplicaPatchIn,
     db: Session = Depends(get_db),
-    payload: dict = Depends(get_optional_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
     """
     PATCH /replicas/{id} §16.4 — Édition avec verrouillage optimiste.
@@ -122,10 +125,14 @@ async def patch_replica(
     Le client DOIT envoyer `version` (la version qu'il a lue).
     Si la version en base est différente → 409 Conflict (écriture destructive refusée).
     """
-    # Anti-IDOR / existence
+    # Anti-IDOR / existence + tenant isolation
+    _uid_p = _get_user_id(payload)
+    assert_replica_access(db, _uid_p, replica_id)
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
     if not replica:
         raise HTTPException(status_code=404, detail="Réplique non trouvée")
+    _uid_s = _get_user_id(payload)
+    assert_replica_access(db, _uid_s, replica_id)
 
     # §16.1 — Vérifier que le projet autorise l'édition (bande non validée/archivée)
     _check_project_editable_for_replica(replica, db)
@@ -320,6 +327,7 @@ def split_replica(
     replica_id: uuid.UUID,
     data: ReplicaSplitIn,
     db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_user_payload),
 ):
     """
     Scinde une réplique en deux au point split_ms.
@@ -331,6 +339,8 @@ def split_replica(
     replica = db.query(Replica).filter(Replica.id == replica_id).first()
     if not replica:
         raise HTTPException(status_code=404, detail="Réplique non trouvée")
+    _uid_s = _get_user_id(payload)
+    assert_replica_access(db, _uid_s, replica_id)
 
     # §16.1 — Vérifier que le projet autorise l'édition
     _check_project_editable_for_replica(replica, db)
@@ -437,6 +447,7 @@ def split_replica(
 def merge_replicas(
     data: ReplicaMergeIn,
     db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_user_payload),
 ):
     """
     Fusionne plusieurs répliques en une seule.
@@ -453,6 +464,10 @@ def merge_replicas(
     if len(replicas) != len(data.replica_ids):
         raise HTTPException(status_code=404, detail="Une ou plusieurs répliques non trouvées")
 
+    # Anti-IDOR for each replica
+    _uid_m = _get_user_id(payload)
+    for _r in replicas:
+        assert_replica_access(db, _uid_m, _r.id)
     # §16.1 — Vérifier que le projet autorise l'édition
     _check_project_editable_for_replica(replicas[0], db)
 

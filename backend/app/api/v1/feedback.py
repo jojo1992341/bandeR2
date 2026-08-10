@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.rbac import get_current_user_payload, get_optional_user_payload, normalize_role
+from app.core.rbac import get_current_user_payload, get_current_user_payload, normalize_role
 from app.models import Studio, User, StudioMembership
 from app.services.feedback_service import FeedbackService
 from pydantic import BaseModel
@@ -36,7 +36,7 @@ def _require_studio_admin(db: Session, payload: dict, studio_id: uuid.UUID):
     raise HTTPException(status_code=403, detail="Admin requis pour gérer le consentement")
 
 @router.get("/studios/{studio_id}/feedback-consent", response_model=dict)
-def get_feedback_consent(studio_id: uuid.UUID, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_optional_user_payload)):
+def get_feedback_consent(studio_id: uuid.UUID, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_current_user_payload)):
     studio = db.query(Studio).filter(Studio.id == studio_id).first()
     if not studio:
         raise HTTPException(status_code=404, detail="Studio non trouvé")

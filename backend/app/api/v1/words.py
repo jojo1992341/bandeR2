@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.core.database import get_db
-from app.core.rbac import get_optional_user_payload
+from app.core.rbac import get_current_user_payload, _get_user_id, assert_studio_member
 from app.models import Word, TranscriptSegment, MediaAsset, Project
 
 router = APIRouter()
@@ -33,7 +33,18 @@ def _serialize_word(w: Word) -> dict:
     }
 
 @router.get("/words/{word_id}", response_model=dict)
-def get_word(word_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_word(word_id: uuid.UUID, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
+    _uid = _get_user_id(payload)
+    from app.models import Word as _W, TranscriptSegment as _TS, MediaAsset as _MA, Project as _PR
+    _w = db.query(_W).filter(_W.id == word_id).first()
+    if _w and _w.segment_id:
+        seg = db.query(_TS).filter(_TS.id == _w.segment_id).first()
+        if seg and seg.media_id:
+            med = db.query(_MA).filter(_MA.id == seg.media_id).first()
+            if med:
+                proj = db.query(_PR).filter(_PR.id == med.project_id).first()
+                if proj:
+                    assert_studio_member(db, _uid, proj.studio_id)
     w = db.query(Word).filter(Word.id == word_id).first()
     if not w:
         raise HTTPException(status_code=404, detail="Mot non trouvé")
@@ -44,7 +55,7 @@ def patch_word(
     word_id: uuid.UUID,
     data: WordPatchIn,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
     w = db.query(Word).filter(Word.id == word_id).first()
     if not w:
@@ -55,6 +66,9 @@ def patch_word(
     media = db.query(MediaAsset).filter(MediaAsset.id == seg.media_id).first() if seg else None
     project = db.query(Project).filter(Project.id == media.project_id).first() if media else None
     studio_id = project.studio_id if project else None
+    if studio_id:
+        _uid_w = _get_user_id(payload)
+        assert_studio_member(db, _uid_w, studio_id)
 
     # Sauvegarder l'état original pour le feedback
     original = {
@@ -138,7 +152,7 @@ def patch_word(
     return _serialize_word(w)
 
 @router.patch("/transcript/words/{word_id}", response_model=dict)
-def patch_word_alias(word_id: uuid.UUID, data: WordPatchIn, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_optional_user_payload)):
+def patch_word_alias(word_id: uuid.UUID, data: WordPatchIn, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
     return patch_word(word_id, data, db, payload)
 
 # Aussi exposer le patch pour les segments (au cas où)
@@ -148,8 +162,14 @@ class SegmentPatchIn(BaseModel):
     text: Optional[str] = None
 
 @router.patch("/transcript/segments/{segment_id}", response_model=dict)
-def patch_segment(segment_id: uuid.UUID, data: SegmentPatchIn, db: Session = Depends(get_db), payload: Optional[dict] = Depends(get_optional_user_payload)):
+def patch_segment(segment_id: uuid.UUID, data: SegmentPatchIn, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
     seg = db.query(TranscriptSegment).filter(TranscriptSegment.id == segment_id).first()
+    if seg:
+        _med = db.query(MediaAsset).filter(MediaAsset.id == seg.media_id).first()
+        if _med:
+            _proj = db.query(Project).filter(Project.id == _med.project_id).first()
+            if _proj:
+                assert_studio_member(db, _get_user_id(payload), _proj.studio_id)
     if not seg:
         raise HTTPException(status_code=404, detail="Segment non trouvé")
     if data.text is not None:

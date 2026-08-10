@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.rbac import get_optional_user_payload
+from app.core.rbac import get_current_user_payload, assert_studio_member, _get_user_id
 from app.models import AuditLog, SecurityAlert
 
 router = APIRouter()
@@ -19,9 +19,24 @@ def list_audit_logs(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
+    # §10.4 anti-IDOR: require studio membership if studio_id given, else filter to user studios
+    user_id_auth = _get_user_id(payload)
+    if studio_id:
+        assert_studio_member(db, user_id_auth, studio_id)
+    else:
+        # No studio filter -> restrict to studios of user to avoid inter-tenant leak
+        from app.models import StudioMembership
+        user_studio_ids = [m.studio_id for m in db.query(StudioMembership).filter(StudioMembership.user_id == user_id_auth).all()]
+        if not user_studio_ids:
+            return []
+        # will apply later via query filter
+        _user_studio_ids = user_studio_ids
+
     query = db.query(AuditLog)
+    if not studio_id and '_user_studio_ids' in locals():
+        query = query.filter(AuditLog.studio_id.in_(_user_studio_ids))
     if studio_id:
         query = query.filter(AuditLog.studio_id == studio_id)
     if user_id:
@@ -65,9 +80,21 @@ def list_security_alerts(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
+    user_id_auth2 = _get_user_id(payload)
+    if studio_id:
+        assert_studio_member(db, user_id_auth2, studio_id)
+    else:
+        from app.models import StudioMembership as _SM
+        _uids2 = [m.studio_id for m in db.query(_SM).filter(_SM.user_id == user_id_auth2).all()]
+        if not _uids2:
+            return []
+        _user_studio_ids2 = _uids2
+
     query = db.query(SecurityAlert)
+    if not studio_id and '_user_studio_ids2' in locals():
+        query = query.filter(SecurityAlert.studio_id.in_(_user_studio_ids2))
     if studio_id:
         query = query.filter(SecurityAlert.studio_id == studio_id)
     if user_email:
@@ -106,13 +133,17 @@ def list_security_alerts(
 def resolve_security_alert(
     alert_id: uuid.UUID,
     db: Session = Depends(get_db),
-    payload: Optional[dict] = Depends(get_optional_user_payload),
+    payload: dict = Depends(get_current_user_payload),
 ):
+    # anti-IDOR: user must belong to alert's studio
+    _uid3 = _get_user_id(payload)
     alert = (
         db.query(SecurityAlert).filter(SecurityAlert.id == alert_id).first()
     )
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
+    if alert.studio_id:
+        assert_studio_member(db, _uid3, alert.studio_id)
     alert.is_resolved = True
     db.commit()
     db.refresh(alert)

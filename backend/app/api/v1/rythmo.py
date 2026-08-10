@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.database import get_db
+from app.core.rbac import get_current_user_payload, _get_user_id, assert_studio_member, assert_project_access
 from app.models import PipelineJob, Project, MediaAsset, Replica, RythmoVersion
 from app.services.rythmo_engine import RythmoEngine
 import uuid
@@ -53,7 +54,9 @@ def _serialize_version(v: RythmoVersion) -> Dict[str, Any]:
     }
 
 @router.post("/projects/{project_id}/rythmo/generate")
-def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session = Depends(get_db)):
+def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
+    _uid = _get_user_id(payload)
+    assert_project_access(db, _uid, project_id)
     job = db.query(PipelineJob).filter(PipelineJob.project_id == project_id).order_by(PipelineJob.updated_at.desc()).first()
     if not job or job.status != "Prêt pour édition" or job.progress_percent < 100:
         raise HTTPException(status_code=409, detail="Pipeline préalable non terminé — attendez la fin du traitement")
@@ -188,7 +191,9 @@ def generate_rythmo(project_id: uuid.UUID, data: RythmoGenerateIn, db: Session =
     return {"project_id": str(project_id), "replica_count": len(replicas), "status": "Prêt pour édition", "emotion_detection": emotion_result, "lip_sync": lip_sync_result, "typographic_profile": {"id": effective_profile.get("id"), "name": effective_profile.get("name"), "codes": effective_profile.get("codes"), "thresholds": effective_profile.get("thresholds")} if effective_profile else None}
 
 @router.get("/projects/{project_id}/replicas", response_model=list)
-def list_replicas(project_id: uuid.UUID, db: Session = Depends(get_db)):
+def list_replicas(project_id: uuid.UUID, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
+    _uid2 = _get_user_id(payload)
+    assert_project_access(db, _uid2, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Projet non trouvé")
@@ -202,7 +207,9 @@ def list_replicas(project_id: uuid.UUID, db: Session = Depends(get_db)):
 # ==================== Versions RythmoBand §16.1 ====================
 
 @router.post("/projects/{project_id}/rythmo/versions", response_model=dict)
-def create_version(project_id: uuid.UUID, data: VersionCreateIn = None, db: Session = Depends(get_db)):
+def create_version(project_id: uuid.UUID, data: VersionCreateIn = None, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
+    _uidx = _get_user_id(payload)
+    assert_project_access(db, _uidx, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Projet non trouvé")
@@ -227,7 +234,9 @@ def create_version(project_id: uuid.UUID, data: VersionCreateIn = None, db: Sess
     return _serialize_version(version)
 
 @router.get("/projects/{project_id}/rythmo/versions", response_model=dict)
-def list_versions(project_id: uuid.UUID, db: Session = Depends(get_db)):
+def list_versions(project_id: uuid.UUID, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
+    _uidx = _get_user_id(payload)
+    assert_project_access(db, _uidx, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Projet non trouvé")
@@ -299,18 +308,24 @@ def compare_versions(
     }
 
 @router.get("/projects/{project_id}/rythmo/compare", response_model=dict)
-def compare_alias(project_id: uuid.UUID, from_id: Optional[uuid.UUID] = None, to_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db)):
+def compare_alias(project_id: uuid.UUID, from_id: Optional[uuid.UUID] = None, to_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
+    _uidx = _get_user_id(payload)
+    assert_project_access(db, _uidx, project_id)
     return compare_versions(project_id, from_id=from_id, to_id=to_id, db=db)
 
 @router.get("/projects/{project_id}/rythmo/versions/{version_id}", response_model=dict)
-def get_version(project_id: uuid.UUID, version_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_version(project_id: uuid.UUID, version_id: uuid.UUID, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
+    _uidx = _get_user_id(payload)
+    assert_project_access(db, _uidx, project_id)
     version = db.query(RythmoVersion).filter(RythmoVersion.id == version_id, RythmoVersion.project_id == project_id).first()
     if not version:
         raise HTTPException(status_code=404, detail="Version non trouvée")
     return _serialize_version(version)
 
 @router.post("/projects/{project_id}/rythmo/versions/{version_id}/restore", response_model=dict)
-def restore_version(project_id: uuid.UUID, version_id: uuid.UUID, db: Session = Depends(get_db)):
+def restore_version(project_id: uuid.UUID, version_id: uuid.UUID, db: Session = Depends(get_db), payload: dict = Depends(get_current_user_payload)):
+    _uidx = _get_user_id(payload)
+    assert_project_access(db, _uidx, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Projet non trouvé")
